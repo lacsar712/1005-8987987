@@ -1,6 +1,6 @@
 import os
 import uuid
-from flask import Flask, render_template, request, redirect, url_for, flash, abort, send_from_directory, jsonify
+from flask import Flask, render_template, request, redirect, url_for, flash, abort, send_from_directory, jsonify, session
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from werkzeug.utils import secure_filename
 from PIL import Image, ExifTags
@@ -9,9 +9,10 @@ from .services import (
     TimelineService, OnThisDayService, PhotoDateGrouper,
     TemplateSeeder, TemplateService, TemplateApplier, PlaceholderService,
     WatermarkConfigService, AlbumWatermarkService, WatermarkProcessor,
-    RenameRuleEngine, RenameHistoryService
+    RenameRuleEngine, RenameHistoryService,
+    GuestAccessConfigService, GuestInviteService, AlbumAccessTokenService
 )
-from .routes import templates_bp, watermark_bp, rename_bp, photo_edit_bp
+from .routes import templates_bp, watermark_bp, rename_bp, photo_edit_bp, access_control_bp
 from datetime import datetime, timedelta
 
 UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static/uploads')
@@ -48,6 +49,7 @@ def create_app():
     app.register_blueprint(watermark_bp)
     app.register_blueprint(rename_bp)
     app.register_blueprint(photo_edit_bp)
+    app.register_blueprint(access_control_bp)
 
     login_manager = LoginManager()
     login_manager.login_view = 'login'
@@ -58,6 +60,72 @@ def create_app():
         if user_id == '1':
             return User(id='1')
         return None
+
+    PUBLIC_ENDPOINTS = {
+        'access_control.guest_gate',
+        'access_control.guest_logout',
+        'access_control.invite_entry',
+        'access_control.album_access_entry',
+        'login',
+        'static',
+        'access_control.api_get_config',
+        'access_control.api_invite_qrcode',
+    }
+
+    @app.before_request
+    def guest_access_middleware():
+        if current_user.is_authenticated:
+            return None
+
+        endpoint = request.endpoint
+        if endpoint in PUBLIC_ENDPOINTS:
+            return None
+
+        if endpoint and endpoint.startswith('api_'):
+            api_public = {
+                'api_get_curation_config',
+                'api_highlights_data',
+                'api_timeline_photos',
+                'api_timeline_albums',
+                'api_timeline_on_this_day',
+                'watermark.api_get_config',
+                'watermark.api_generate_preview',
+                'access_control.api_get_config',
+            }
+            if endpoint in api_public:
+                pass
+
+        if GuestAccessConfigService.is_enabled():
+            guest_ok = session.get('guest_authenticated', False)
+            config_version = GuestAccessConfigService.get_config_version()
+            session_version = session.get('guest_config_version', 0)
+            if session_version != config_version:
+                guest_ok = False
+                session.pop('guest_authenticated', None)
+                session.pop('guest_album_scope', None)
+                session.pop('guest_invite_code', None)
+                session.pop('album_access_token', None)
+
+            if not guest_ok:
+                if request.endpoint and request.endpoint.startswith('api_'):
+                    return jsonify({'success': False, 'message': '访客验证已过期，请重新验证', 'need_gate': True}), 401
+                next_url = request.path
+                if request.query_string:
+                    next_url = f"{request.path}?{request.query_string.decode('utf-8')}"
+                return redirect(url_for('access_control.guest_gate', next=next_url))
+
+        return None
+
+    def _filter_albums_by_scope(albums):
+        if current_user.is_authenticated:
+            return albums
+        scope = session.get('guest_album_scope', []) or []
+        if not scope:
+            return albums
+        allowed_ids = set(scope)
+        return [a for a in albums if a.id in allowed_ids]
+
+    app.jinja_env.globals['filter_albums_by_scope'] = _filter_albums_by_scope
 
     os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
@@ -70,15 +138,21 @@ def create_app():
             db.session.commit()
         get_or_create_curation_config()
         WatermarkConfigService.get_config()
+        GuestAccessConfigService.get_config()
 
     @app.route('/')
     def index():
         albums = Album.query.order_by(Album.created_at.desc()).all()
+        albums = _filter_albums_by_scope(albums)
         return render_template('index.html', albums=albums)
 
     @app.route('/album/<int:album_id>')
     def album_detail(album_id):
         album = Album.query.get_or_404(album_id)
+        if not current_user.is_authenticated:
+            scope = session.get('guest_album_scope', []) or []
+            if scope and album.id not in scope:
+                abort(403)
         highlighted_ids = set()
         if current_user.is_authenticated:
             highlighted_ids = set(h.photo_id for h in Highlight.query.all())
@@ -90,11 +164,20 @@ def create_app():
 
     @app.route('/highlights')
     def highlights():
-        highlights = Highlight.query.order_by(Highlight.sort_order.asc(), Highlight.created_at.desc()).all()
+        scope = session.get('guest_album_scope', []) or []
+        if current_user.is_authenticated or not scope:
+            highlights = Highlight.query.order_by(Highlight.sort_order.asc(), Highlight.created_at.desc()).all()
+        else:
+            allowed_ids = set(scope)
+            highlights = Highlight.query.join(Photo, Highlight.photo_id == Photo.id)\
+                .filter(Photo.album_id.in_(allowed_ids))\
+                .order_by(Highlight.sort_order.asc(), Highlight.created_at.desc()).all()
         photos_with_highlights = []
         for h in highlights:
             photo = Photo.query.get(h.photo_id)
             if photo:
+                if scope and not current_user.is_authenticated and photo.album_id not in set(scope):
+                    continue
                 photos_with_highlights.append({'photo': photo, 'highlight': h})
         config = get_or_create_curation_config()
         return render_template('highlights.html', 
@@ -329,11 +412,20 @@ def create_app():
 
     @app.route('/api/highlights/data')
     def api_highlights_data():
-        highlights = Highlight.query.order_by(Highlight.sort_order.asc(), Highlight.created_at.desc()).all()
+        scope = session.get('guest_album_scope', []) or []
+        if current_user.is_authenticated or not scope:
+            highlights = Highlight.query.order_by(Highlight.sort_order.asc(), Highlight.created_at.desc()).all()
+        else:
+            allowed_ids = set(scope)
+            highlights = Highlight.query.join(Photo, Highlight.photo_id == Photo.id)\
+                .filter(Photo.album_id.in_(allowed_ids))\
+                .order_by(Highlight.sort_order.asc(), Highlight.created_at.desc()).all()
         result = []
         for h in highlights:
             photo = Photo.query.get(h.photo_id)
             if photo:
+                if scope and not current_user.is_authenticated and photo.album_id not in set(scope):
+                    continue
                 album = Album.query.get(photo.album_id)
                 result.append({
                     'photo_id': photo.id,
@@ -425,6 +517,11 @@ def create_app():
     def timeline():
         data = TimelineService.get_timeline_data(use_exif=False)
         on_this_day = OnThisDayService.get_photos_on_this_day(use_exif=False)
+        if not current_user.is_authenticated:
+            scope = session.get('guest_album_scope', []) or []
+            if scope:
+                data = _filter_timeline_data(data, scope)
+                on_this_day = _filter_on_this_day(on_this_day, scope)
         return render_template(
             'timeline.html',
             timeline_data=data,
@@ -432,23 +529,51 @@ def create_app():
             current_user=current_user
         )
 
+    def _filter_timeline_data(data, scope):
+        allowed_ids = set(scope)
+        filtered_albums = [a for a in data.get('albums', []) if a.get('id') in allowed_ids]
+        filtered_groups = []
+        for g in data.get('groups', []):
+            g_photos = [p for p in g.get('photos', []) if p.get('album_id') in allowed_ids]
+            if g_photos:
+                new_g = dict(g)
+                new_g['photos'] = g_photos
+                filtered_groups.append(new_g)
+        return {'albums': filtered_albums, 'groups': filtered_groups}
+
+    def _filter_on_this_day(items, scope):
+        allowed_ids = set(scope)
+        return [p for p in items if p.get('album_id') in allowed_ids]
+
     @app.route('/api/timeline/photos')
     def api_timeline_photos():
         use_exif = request.args.get('mode', 'upload') == 'exif'
         album_ids_str = request.args.get('albums', '')
         album_ids = [int(x) for x in album_ids_str.split(',') if x.strip().isdigit()] if album_ids_str else None
         data = TimelineService.get_timeline_data(album_ids=album_ids, use_exif=use_exif)
+        if not current_user.is_authenticated:
+            scope = session.get('guest_album_scope', []) or []
+            if scope:
+                data = _filter_timeline_data(data, scope)
         return jsonify(data)
 
     @app.route('/api/timeline/albums')
     def api_timeline_albums():
         data = TimelineService.get_timeline_data(use_exif=False)
+        if not current_user.is_authenticated:
+            scope = session.get('guest_album_scope', []) or []
+            if scope:
+                data = _filter_timeline_data(data, scope)
         return jsonify({'albums': data['albums']})
 
     @app.route('/api/timeline/on-this-day')
     def api_timeline_on_this_day():
         use_exif = request.args.get('mode', 'upload') == 'exif'
         data = OnThisDayService.get_photos_on_this_day(use_exif=use_exif)
+        if not current_user.is_authenticated:
+            scope = session.get('guest_album_scope', []) or []
+            if scope:
+                data = _filter_on_this_day(data, scope)
         return jsonify({'items': data})
 
     return app

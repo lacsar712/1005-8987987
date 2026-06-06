@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>访客验证 - 在线相册系统</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#3b82f6',
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 min-h-screen">
+    <div class="flex items-center justify-center min-h-screen p-4">
+        <div class="w-full max-w-md">
+            <div class="text-center mb-8">
+                <div class="inline-flex items-center justify-center w-20 h-20 bg-white rounded-2xl shadow-lg mb-4">
+                    <svg class="w-10 h-10 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
+                    </svg>
+                </div>
+                <h1 class="text-2xl font-bold text-gray-900 mb-2">访问验证</h1>
+                <p class="text-gray-500">{{ config.welcome_text or '欢迎访问，请输入访客口令' }}</p>
+            </div>
+
+            <div class="bg-white rounded-2xl shadow-xl p-8 border border-gray-100">
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                        {% for category, message in messages %}
+                            <div class="mb-4 p-3 rounded-lg text-sm {% if category == 'success' %}bg-green-50 text-green-700{% elif category == 'error' %}bg-red-50 text-red-700{% else %}bg-blue-50 text-blue-700{% endif %}">
+                                {{ message }}
+                            </div>
+                        {% endfor %}
+                    {% endif %}
+                {% endwith %}
+
+                {% if error_msg %}
+                    <div class="mb-4 p-3 rounded-lg text-sm bg-red-50 text-red-700">
+                        {{ error_msg }}
+                    </div>
+                {% endif %}
+
+                <form method="POST" onsubmit="return handleFormSubmit(this)">
+                    <input type="hidden" name="next" value="{{ next_url }}">
+
+                    <div class="mb-5">
+                        <label for="password" class="block text-sm font-medium text-gray-700 mb-2">访客口令</label>
+                        <input type="password" name="password" id="password"
+                            inputmode="numeric" pattern="[0-9]*" maxlength="8"
+                            placeholder="请输入4-8位数字口令"
+                            class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary focus:border-primary outline-none transition text-lg tracking-widest text-center font-mono">
+                    </div>
+
+                    <div class="relative my-6">
+                        <div class="absolute inset-0 flex items-center">
+                            <div class="w-full border-t border-gray-200"></div>
+                        </div>
+                        <div class="relative flex justify-center text-sm">
+                            <span class="px-3 bg-white text-gray-400">或使用邀请码</span>
+                        </div>
+                    </div>
+
+                    <div class="mb-6">
+                        <label for="invite_code" class="block text-sm font-medium text-gray-700 mb-2">邀请码</label>
+                        <input type="text" name="invite_code" id="invite_code"
+                            value="{{ prefill_code }}"
+                            placeholder="输入邀请码（扫码获得）"
+                            class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary focus:border-primary outline-none transition text-sm font-mono">
+                        {% if prefill_code %}
+                            <p class="mt-2 text-xs text-green-600 flex items-center">
+                                <svg class="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                                </svg>
+                                已自动填入邀请码
+                            </p>
+                        {% endif %}
+                    </div>
+
+                    <button type="submit" id="submitBtn" class="w-full bg-primary hover:bg-blue-600 text-white font-semibold py-3.5 rounded-xl transition duration-200 shadow-md hover:shadow-lg">
+                        验证进入
+                    </button>
+                </form>
+
+                <div class="mt-6 pt-6 border-t border-gray-100 text-center">
+                    <a href="{{ url_for('login') }}" class="text-sm text-gray-400 hover:text-primary transition">
+                        管理员登录 →
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function handleFormSubmit(form) {
+            const submitBtn = form.querySelector('button[type="submit"]');
+            const password = document.getElementById('password').value.trim();
+            const inviteCode = document.getElementById('invite_code').value.trim();
+
+            if (!password && !inviteCode) {
+                return true;
+            }
+
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                submitBtn.innerHTML = `
+                    <svg class="animate-spin inline-block mr-2 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    验证中...
+                `;
+                submitBtn.classList.add('opacity-75', 'cursor-not-allowed');
+            }
+            return true;
+        }
+
+        (function() {
+            const pwdInput = document.getElementById('password');
+            const inviteInput = document.getElementById('invite_code');
+
+            pwdInput.addEventListener('input', function() {
+                this.value = this.value.replace(/[^0-9]/g, '').slice(0, 8);
+                if (this.value) {
+                    inviteInput.value = '';
+                }
+            });
+
+            inviteInput.addEventListener('input', function() {
+                if (this.value) {
+                    pwdInput.value = '';
+                }
+            });
+
+            if (pwdInput.value) {
+                pwdInput.focus();
+            } else if (inviteInput.value) {
+                inviteInput.focus();
+            } else {
+                pwdInput.focus();
+            }
+        })();
+    </script>
+</body>
+</html>

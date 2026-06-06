@@ -1,0 +1,530 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="mb-6">
+    <a href="{{ url_for('index') }}" class="text-gray-500 hover:text-gray-700 text-sm flex items-center mb-4">
+        <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+        返回首页
+    </a>
+    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+            <h1 class="text-3xl font-bold text-gray-900">访问控制</h1>
+            <p class="text-gray-500 mt-1">配置访客口令、邀请码和相册分域访问权限</p>
+        </div>
+    </div>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <div class="lg:col-span-2 space-y-6">
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+            <div class="p-5 border-b border-gray-100 flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center">
+                        <svg class="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
+                        </svg>
+                    </div>
+                    <div>
+                        <h2 class="text-lg font-semibold text-gray-900">访客口令</h2>
+                        <p class="text-xs text-gray-500">开启后，访客需输入口令方可浏览相册</p>
+                    </div>
+                </div>
+                <label class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" id="guest-enabled" class="sr-only peer" {% if config.enabled %}checked{% endif %}>
+                    <div class="w-14 h-7 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-100 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[4px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-primary"></div>
+                </label>
+            </div>
+            <div class="p-5 space-y-4" id="password-panel">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1.5">访客口令 <span class="text-gray-400">(4-8位数字)</span></label>
+                    <input type="password" id="guest-password" inputmode="numeric" pattern="[0-9]*" maxlength="8"
+                        value="{% if config.password %}{{ '*' * config.password|length }}{% endif %}"
+                        placeholder="设置4-8位数字口令"
+                        class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none transition tracking-widest font-mono">
+                    <p class="mt-1 text-xs text-gray-400">修改口令后，所有已验证访客需重新验证</p>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1.5">门禁页欢迎文案</label>
+                    <textarea id="welcome-text" rows="2" maxlength="500" placeholder="欢迎访问，请输入访客口令"
+                        class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none transition resize-none">{{ config.welcome_text }}</textarea>
+                </div>
+                <div class="flex justify-end">
+                    <button onclick="saveGuestConfig()" class="px-5 py-2.5 bg-primary hover:bg-blue-600 text-white font-medium rounded-lg transition shadow-sm">
+                        保存设置
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+            <div class="p-5 border-b border-gray-100 flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-purple-50 rounded-lg flex items-center justify-center">
+                        <svg class="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"></path>
+                        </svg>
+                    </div>
+                    <div>
+                        <h2 class="text-lg font-semibold text-gray-900">邀请码管理</h2>
+                        <p class="text-xs text-gray-500">生成带有效期的QR邀请码，扫码直达门禁页</p>
+                    </div>
+                </div>
+                <button onclick="openInviteModal()" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium rounded-lg transition">
+                    + 生成邀请码
+                </button>
+            </div>
+            <div class="p-5">
+                <div id="invite-list" class="space-y-3">
+                    {% for invite in invites %}
+                    <div class="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-100">
+                        <div class="flex items-center gap-3 flex-1 min-w-0">
+                            <div class="w-10 h-10 bg-white rounded-lg flex items-center justify-center border border-gray-200 text-sm font-mono text-purple-600">
+                                #{{ loop.index }}
+                            </div>
+                            <div class="min-w-0 flex-1">
+                                <div class="flex items-center gap-2">
+                                    <code class="text-sm font-mono text-gray-800 truncate max-w-[180px]">{{ invite.code }}</code>
+                                    <button onclick="copyText('{{ invite.code }}')" class="text-gray-400 hover:text-primary transition" title="复制">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                                        </svg>
+                                    </button>
+                                    <button onclick="showQrCode('{{ invite.code }}')" class="text-gray-400 hover:text-primary transition" title="显示QR码">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"></path>
+                                        </svg>
+                                    </button>
+                                </div>
+                                <div class="mt-1 flex items-center gap-3 text-xs text-gray-500">
+                                    <span>有效期至: {{ invite.expires_at.strftime('%Y-%m-%d %H:%M') }}</span>
+                                    <span>使用: {{ invite.used_count }}{% if invite.max_uses > 0 %}/{{ invite.max_uses }}{% endif %}</span>
+                                    {% if invite.album_scope_ids %}
+                                    <span class="text-purple-600">限{{ invite.album_scope_ids|length }}个相册</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            {% if invite.is_valid() %}
+                                <span class="px-2.5 py-1 text-xs bg-green-100 text-green-700 rounded-full">有效</span>
+                                <button onclick="revokeInvite({{ invite.id }})" class="px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 rounded-lg transition">
+                                    撤销
+                                </button>
+                            {% else %}
+                                <span class="px-2.5 py-1 text-xs bg-gray-100 text-gray-500 rounded-full">已失效</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% else %}
+                    <div class="text-center py-12 text-gray-400">
+                        <svg class="w-12 h-12 mx-auto mb-3 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"></path>
+                        </svg>
+                        <p class="text-sm">暂无邀请码，点击右上角生成</p>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+            <div class="p-5 border-b border-gray-100 flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-green-50 rounded-lg flex items-center justify-center">
+                        <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path>
+                        </svg>
+                    </div>
+                    <div>
+                        <h2 class="text-lg font-semibold text-gray-900">分域访问令牌</h2>
+                        <p class="text-xs text-gray-500">为不同相册组签发独立访问令牌，限制访客浏览范围</p>
+                    </div>
+                </div>
+                <button onclick="openTokenModal()" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition">
+                    + 签发令牌
+                </button>
+            </div>
+            <div class="p-5">
+                <div id="token-list" class="space-y-3">
+                    {% for token in tokens %}
+                    <div class="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-100">
+                        <div class="flex items-center gap-3 flex-1 min-w-0">
+                            <div class="w-10 h-10 bg-white rounded-lg flex items-center justify-center border border-gray-200">
+                                <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"></path>
+                                </svg>
+                            </div>
+                            <div class="min-w-0 flex-1">
+                                <div class="flex items-center gap-2">
+                                    <span class="text-sm font-medium text-gray-900">{{ token.name or '未命名令牌' }}</span>
+                                </div>
+                                <div class="mt-1 flex items-center gap-2">
+                                    <code class="text-xs font-mono text-gray-600 truncate max-w-[220px]">{{ token.token }}</code>
+                                    <button onclick="copyText('{{ token.token }}')" class="text-gray-400 hover:text-primary transition" title="复制令牌">
+                                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                                        </svg>
+                                    </button>
+                                    <button onclick="copyText('{{ request.url_root.rstrip('/') }}/album-access/{{ token.token }}')" class="text-gray-400 hover:text-green-600 transition text-xs" title="复制访问链接">
+                                        🔗 链接
+                                    </button>
+                                </div>
+                                <div class="mt-1 flex items-center gap-3 text-xs text-gray-500">
+                                    <span>授权相册: {{ token.album_ids|length }}个</span>
+                                    {% if token.expires_at %}
+                                    <span>到期: {{ token.expires_at.strftime('%Y-%m-%d') }}</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            {% if token.is_valid() %}
+                                <span class="px-2.5 py-1 text-xs bg-green-100 text-green-700 rounded-full">有效</span>
+                                <button onclick="revokeToken({{ token.id }})" class="px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 rounded-lg transition">
+                                    撤销
+                                </button>
+                            {% else %}
+                                <span class="px-2.5 py-1 text-xs bg-gray-100 text-gray-500 rounded-full">已失效</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% else %}
+                    <div class="text-center py-12 text-gray-400">
+                        <svg class="w-12 h-12 mx-auto mb-3 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path>
+                        </svg>
+                        <p class="text-sm">暂无访问令牌，点击右上角签发</p>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="space-y-6">
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+            <h3 class="text-sm font-semibold text-gray-900 mb-3">💡 使用说明</h3>
+            <ul class="space-y-2 text-xs text-gray-500">
+                <li class="flex gap-2">
+                    <span class="text-primary">•</span>
+                    开启访客口令后，未登录访客将被重定向至门禁页
+                </li>
+                <li class="flex gap-2">
+                    <span class="text-purple-600">•</span>
+                    邀请码可分享QR码给访客，扫码自动跳转门禁页
+                </li>
+                <li class="flex gap-2">
+                    <span class="text-green-600">•</span>
+                    分域令牌可限制访客只能看到授权的相册
+                </li>
+                <li class="flex gap-2">
+                    <span class="text-orange-500">•</span>
+                    修改口令或关闭功能后，所有访客需重新验证
+                </li>
+            </ul>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+            <h3 class="text-sm font-semibold text-gray-900 mb-3">📋 现有相册</h3>
+            <div class="space-y-2">
+                {% for album in albums %}
+                <div class="flex items-center justify-between py-2 px-3 bg-gray-50 rounded-lg text-sm">
+                    <span class="text-gray-700 truncate">{{ album.title }}</span>
+                    <span class="text-xs text-gray-400 font-mono">ID: {{ album.id }}</span>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="invite-modal" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50">
+    <div class="bg-white rounded-2xl p-6 w-full max-w-md mx-4">
+        <div class="flex items-center justify-between mb-5">
+            <h3 class="text-lg font-semibold text-gray-900">生成邀请码</h3>
+            <button onclick="closeModal('invite-modal')" class="text-gray-400 hover:text-gray-600">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+        </div>
+        <div class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1.5">有效期（小时）</label>
+                <input type="number" id="invite-expires" value="24" min="1" max="720"
+                    class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none transition">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1.5">最大使用次数 <span class="text-gray-400">(0=不限)</span></label>
+                <input type="number" id="invite-max-uses" value="0" min="0" max="1000"
+                    class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none transition">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1.5">限制相册范围 <span class="text-gray-400">(可选)</span></label>
+                <div id="invite-album-checkboxes" class="space-y-2 max-h-40 overflow-y-auto border border-gray-200 rounded-lg p-3">
+                    {% for album in albums %}
+                    <label class="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" class="invite-album-checkbox rounded text-primary" value="{{ album.id }}">
+                        <span class="text-sm text-gray-700">{{ album.title }}</span>
+                    </label>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        <div class="mt-6 flex gap-3 justify-end">
+            <button onclick="closeModal('invite-modal')" class="px-4 py-2.5 text-gray-600 hover:bg-gray-100 rounded-lg transition">取消</button>
+            <button onclick="createInvite()" class="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition">生成</button>
+        </div>
+    </div>
+</div>
+
+<div id="token-modal" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50">
+    <div class="bg-white rounded-2xl p-6 w-full max-w-md mx-4">
+        <div class="flex items-center justify-between mb-5">
+            <h3 class="text-lg font-semibold text-gray-900">签发访问令牌</h3>
+            <button onclick="closeModal('token-modal')" class="text-gray-400 hover:text-gray-600">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+        </div>
+        <div class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1.5">令牌名称</label>
+                <input type="text" id="token-name" placeholder="例如：VIP用户组"
+                    class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none transition">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1.5">授权相册 <span class="text-red-500">*</span></label>
+                <div id="token-album-checkboxes" class="space-y-2 max-h-48 overflow-y-auto border border-gray-200 rounded-lg p-3">
+                    {% for album in albums %}
+                    <label class="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" class="token-album-checkbox rounded text-green-600" value="{{ album.id }}">
+                        <span class="text-sm text-gray-700">{{ album.title }}</span>
+                    </label>
+                    {% endfor %}
+                </div>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1.5">有效期（小时）<span class="text-gray-400"> (留空=永久)</span></label>
+                <input type="number" id="token-expires" placeholder="例如：720" min="1"
+                    class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none transition">
+            </div>
+        </div>
+        <div class="mt-6 flex gap-3 justify-end">
+            <button onclick="closeModal('token-modal')" class="px-4 py-2.5 text-gray-600 hover:bg-gray-100 rounded-lg transition">取消</button>
+            <button onclick="createToken()" class="px-5 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-lg transition">签发</button>
+        </div>
+    </div>
+</div>
+
+<div id="qr-modal" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50">
+    <div class="bg-white rounded-2xl p-6 w-full max-w-sm mx-4 text-center">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-semibold text-gray-900">邀请码 QR</h3>
+            <button onclick="closeModal('qr-modal')" class="text-gray-400 hover:text-gray-600">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+        </div>
+        <div id="qr-image-container" class="flex justify-center mb-4">
+            <div class="w-64 h-64 bg-gray-100 rounded-lg flex items-center justify-center">
+                <span class="text-gray-400 text-sm">加载中...</span>
+            </div>
+        </div>
+        <p id="qr-code-text" class="text-xs text-gray-500 font-mono break-all mb-3"></p>
+        <div class="flex gap-2 justify-center">
+            <button onclick="downloadQr()" class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm rounded-lg transition">下载图片</button>
+            <button onclick="copyInviteUrl()" class="px-4 py-2 bg-primary hover:bg-blue-600 text-white text-sm rounded-lg transition">复制链接</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    const originalPassword = '{{ config.password }}';
+
+    document.getElementById('guest-enabled').addEventListener('change', function() {
+        const panel = document.getElementById('password-panel');
+        panel.style.opacity = this.checked ? '1' : '0.5';
+        panel.style.pointerEvents = this.checked ? 'auto' : 'none';
+    });
+
+    document.getElementById('guest-password').addEventListener('input', function() {
+        this.value = this.value.replace(/[^0-9]/g, '').slice(0, 8);
+    });
+
+    function saveGuestConfig() {
+        const enabled = document.getElementById('guest-enabled').checked;
+        const passwordInput = document.getElementById('guest-password');
+        const welcomeText = document.getElementById('welcome-text').value;
+
+        let password = passwordInput.value;
+        const allStars = /^\*+$/.test(password);
+        if (allStars) {
+            password = '';
+        }
+
+        if (enabled && password && (password.length < 4 || password.length > 8)) {
+            Swal.fire({ icon: 'error', title: '口令格式错误', text: '请输入4-8位数字口令' });
+            return;
+        }
+        if (enabled && !password && !originalPassword) {
+            Swal.fire({ icon: 'error', title: '请设置口令', text: '开启访客口令后必须设置4-8位数字口令' });
+            return;
+        }
+
+        const payload = { enabled, welcome_text: welcomeText };
+        if (password) payload.password = password;
+
+        fetch('/api/access-control/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        }).then(r => r.json()).then(data => {
+            if (data.success) {
+                Swal.fire({ icon: 'success', title: '保存成功', timer: 1500, showConfirmButton: false });
+                setTimeout(() => location.reload(), 1000);
+            } else {
+                Swal.fire({ icon: 'error', title: '保存失败', text: data.message || '未知错误' });
+            }
+        });
+    }
+
+    function openInviteModal() {
+        document.getElementById('invite-modal').classList.remove('hidden');
+        document.getElementById('invite-modal').classList.add('flex');
+    }
+
+    function openTokenModal() {
+        document.getElementById('token-modal').classList.remove('hidden');
+        document.getElementById('token-modal').classList.add('flex');
+    }
+
+    function closeModal(id) {
+        document.getElementById(id).classList.add('hidden');
+        document.getElementById(id).classList.remove('flex');
+    }
+
+    function createInvite() {
+        const expires = parseInt(document.getElementById('invite-expires').value) || 24;
+        const maxUses = parseInt(document.getElementById('invite-max-uses').value) || 0;
+        const albumIds = Array.from(document.querySelectorAll('.invite-album-checkbox:checked')).map(cb => parseInt(cb.value));
+
+        fetch('/api/access-control/invites', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ expires_hours: expires, max_uses: maxUses, album_scope_ids: albumIds })
+        }).then(r => r.json()).then(data => {
+            if (data.success) {
+                closeModal('invite-modal');
+                Swal.fire({ icon: 'success', title: '邀请码已生成', timer: 1500, showConfirmButton: false });
+                setTimeout(() => location.reload(), 1000);
+            } else {
+                Swal.fire({ icon: 'error', title: '生成失败', text: data.message });
+            }
+        });
+    }
+
+    function createToken() {
+        const name = document.getElementById('token-name').value.trim();
+        const expiresInput = document.getElementById('token-expires').value;
+        const albumIds = Array.from(document.querySelectorAll('.token-album-checkbox:checked')).map(cb => parseInt(cb.value));
+
+        if (albumIds.length === 0) {
+            Swal.fire({ icon: 'error', title: '请选择相册', text: '至少选择一个授权相册' });
+            return;
+        }
+
+        const payload = { name, album_ids: albumIds };
+        if (expiresInput) payload.expires_hours = parseInt(expiresInput);
+
+        fetch('/api/access-control/tokens', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        }).then(r => r.json()).then(data => {
+            if (data.success) {
+                closeModal('token-modal');
+                Swal.fire({ icon: 'success', title: '令牌已签发', timer: 1500, showConfirmButton: false });
+                setTimeout(() => location.reload(), 1000);
+            } else {
+                Swal.fire({ icon: 'error', title: '签发失败', text: data.message });
+            }
+        });
+    }
+
+    function revokeInvite(id) {
+        Swal.fire({
+            title: '确认撤销?',
+            text: '撤销后该邀请码将立即失效',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#ef4444',
+            confirmButtonText: '撤销',
+            cancelButtonText: '取消'
+        }).then(result => {
+            if (result.isConfirmed) {
+                fetch(`/api/access-control/invites/${id}/revoke`, { method: 'POST' })
+                    .then(r => r.json()).then(data => {
+                        if (data.success) {
+                            Swal.fire({ icon: 'success', title: '已撤销', timer: 1200, showConfirmButton: false });
+                            setTimeout(() => location.reload(), 800);
+                        }
+                    });
+            }
+        });
+    }
+
+    function revokeToken(id) {
+        Swal.fire({
+            title: '确认撤销?',
+            text: '撤销后该令牌将立即失效',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#ef4444',
+            confirmButtonText: '撤销',
+            cancelButtonText: '取消'
+        }).then(result => {
+            if (result.isConfirmed) {
+                fetch(`/api/access-control/tokens/${id}/revoke`, { method: 'POST' })
+                    .then(r => r.json()).then(data => {
+                        if (data.success) {
+                            Swal.fire({ icon: 'success', title: '已撤销', timer: 1200, showConfirmButton: false });
+                            setTimeout(() => location.reload(), 800);
+                        }
+                    });
+            }
+        });
+    }
+
+    let currentQrCode = '';
+    function showQrCode(code) {
+        currentQrCode = code;
+        document.getElementById('qr-code-text').textContent = code;
+        const container = document.getElementById('qr-image-container');
+        container.innerHTML = '<img src="/api/access-control/invites/' + code + '/qrcode" class="w-64 h-64 rounded-lg border border-gray-200">';
+        document.getElementById('qr-modal').classList.remove('hidden');
+        document.getElementById('qr-modal').classList.add('flex');
+    }
+
+    function downloadQr() {
+        const link = document.createElement('a');
+        link.href = '/api/access-control/invites/' + currentQrCode + '/qrcode';
+        link.download = 'invite-' + currentQrCode + '.png';
+        link.click();
+    }
+
+    function copyInviteUrl() {
+        const url = window.location.origin + '/invite/' + currentQrCode;
+        copyText(url);
+    }
+
+    function copyText(text) {
+        navigator.clipboard.writeText(text).then(() => {
+            Swal.fire({ icon: 'success', title: '已复制', timer: 1000, showConfirmButton: false, toast: true, position: 'top' });
+        }).catch(() => {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+            Swal.fire({ icon: 'success', title: '已复制', timer: 1000, showConfirmButton: false, toast: true, position: 'top' });
+        });
+    }
+</script>
+{% endblock %}

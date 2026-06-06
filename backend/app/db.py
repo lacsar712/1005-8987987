@@ -325,3 +325,104 @@ class PhotoEditVersion(db.Model):
             'is_applied': self.is_applied,
             'created_at': self.created_at.isoformat() if self.created_at else None,
         }
+
+
+class GuestAccessConfig(db.Model):
+    """访客访问控制配置"""
+    id = db.Column(db.Integer, primary_key=True)
+    enabled = db.Column(db.Boolean, default=False)
+    password = db.Column(db.String(20), default='')
+    welcome_text = db.Column(db.String(500), default='欢迎访问，请输入访客口令')
+    config_version = db.Column(db.Integer, default=1)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'enabled': self.enabled,
+            'password': self.password,
+            'welcome_text': self.welcome_text,
+            'config_version': self.config_version,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class GuestInviteCode(db.Model):
+    """访客邀请码（QR码用）"""
+    id = db.Column(db.Integer, primary_key=True)
+    code = db.Column(db.String(64), unique=True, nullable=False)
+    expires_at = db.Column(db.DateTime, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    used_count = db.Column(db.Integer, default=0)
+    max_uses = db.Column(db.Integer, default=0)
+    is_active = db.Column(db.Boolean, default=True)
+    album_scope = db.Column(db.Text, default='')
+
+    def get_album_scope_ids(self):
+        try:
+            return json.loads(self.album_scope or '[]')
+        except (json.JSONDecodeError, TypeError):
+            return []
+
+    def set_album_scope_ids(self, ids):
+        self.album_scope = json.dumps(ids or [], ensure_ascii=False)
+
+    def is_valid(self):
+        if not self.is_active:
+            return False
+        if self.max_uses > 0 and self.used_count >= self.max_uses:
+            return False
+        return datetime.utcnow() < self.expires_at
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'code': self.code,
+            'expires_at': self.expires_at.isoformat() if self.expires_at else None,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'used_count': self.used_count,
+            'max_uses': self.max_uses,
+            'is_active': self.is_active,
+            'is_valid': self.is_valid(),
+            'album_scope_ids': self.get_album_scope_ids(),
+        }
+
+
+class AlbumAccessToken(db.Model):
+    """相册组访问令牌（分域访问）"""
+    id = db.Column(db.Integer, primary_key=True)
+    token = db.Column(db.String(64), unique=True, nullable=False)
+    name = db.Column(db.String(100), default='')
+    album_ids_json = db.Column(db.Text, default='[]')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    expires_at = db.Column(db.DateTime, nullable=True)
+    is_active = db.Column(db.Boolean, default=True)
+    created_by = db.Column(db.String(50), default='admin')
+
+    def get_album_ids(self):
+        try:
+            return json.loads(self.album_ids_json or '[]')
+        except (json.JSONDecodeError, TypeError):
+            return []
+
+    def set_album_ids(self, ids):
+        self.album_ids_json = json.dumps(ids or [], ensure_ascii=False)
+
+    def is_valid(self):
+        if not self.is_active:
+            return False
+        if self.expires_at and datetime.utcnow() >= self.expires_at:
+            return False
+        return True
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'token': self.token,
+            'name': self.name,
+            'album_ids': self.get_album_ids(),
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'expires_at': self.expires_at.isoformat() if self.expires_at else None,
+            'is_active': self.is_active,
+            'is_valid': self.is_valid(),
+        }
