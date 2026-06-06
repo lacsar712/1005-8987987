@@ -49,7 +49,23 @@
             {% endif %}
         </div>
         {% if current_user.is_authenticated %}
-        <div class="flex-shrink-0 flex items-center gap-3">
+        <div class="flex-shrink-0 flex flex-wrap items-center gap-2">
+            <div id="batch-action-bar" class="hidden items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                <span class="text-sm text-amber-800">
+                    已选 <span id="selected-count" class="font-bold">0</span> 张
+                </span>
+                <button id="batch-rename-btn" class="bg-amber-500 hover:bg-amber-600 text-white px-3 py-1.5 rounded-md text-sm shadow transition flex items-center">
+                    <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+                    批量重命名
+                </button>
+                <button id="clear-selection-btn" class="text-gray-600 hover:text-gray-800 px-2 py-1 rounded-md text-sm transition">
+                    清空选择
+                </button>
+            </div>
+            <button id="toggle-select-mode-btn" class="bg-white hover:bg-gray-50 text-gray-700 border border-gray-300 px-4 py-2.5 rounded-lg shadow transition flex items-center justify-center text-sm">
+                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path></svg>
+                多选
+            </button>
             <button id="show-candidates-btn" class="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2.5 rounded-lg shadow transition flex items-center justify-center text-sm">
                 <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path></svg>
                 精选候选推荐
@@ -103,7 +119,7 @@
                 </div>
             {% else %}
                 {% set photo = item.obj %}
-                <div class="break-inside-avoid mb-4 relative group overflow-hidden shadow-sm hover:shadow-lg transition"
+                <div class="break-inside-avoid mb-4 relative group overflow-hidden shadow-sm hover:shadow-lg transition photo-item"
                      data-photo-id="{{ photo.id }}"
                      style="border-radius: {{ radius }}px;">
                     <img src="{{ url_for('static', filename='uploads/' + photo.filename) }}"
@@ -117,8 +133,15 @@
                     </div>
                     {% endif %}
 
+                    <div class="photo-select-checkbox absolute top-2 left-2 z-20 hidden">
+                        <label class="cursor-pointer">
+                            <input type="checkbox" class="photo-select w-5 h-5 text-primary rounded border-2 border-white shadow-md bg-white/80 focus:ring-primary" data-photo-id="{{ photo.id }}">
+                        </label>
+                    </div>
+                    <div class="photo-selected-badge absolute inset-0 bg-primary/20 border-4 border-primary pointer-events-none hidden rounded-lg z-10" style="border-radius: {{ radius }}px;"></div>
+
                     <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-4 opacity-0 group-hover:opacity-100 transition duration-300 flex justify-between items-end pointer-events-none">
-                        <span class="text-white text-xs truncate max-w-[50%]">{{ photo.original_filename }}</span>
+                        <span class="text-white text-xs truncate max-w-[50%] photo-filename">{{ photo.original_filename }}</span>
                         {% if current_user.is_authenticated %}
                             <div class="flex items-center space-x-2 pointer-events-auto">
                                 {% if photo.id in highlighted_ids %}
@@ -143,6 +166,12 @@
 
     <script src="https://unpkg.com/viewerjs@1.11.6/dist/viewer.min.js"></script>
     <script>
+        const ALBUM_ID = {{ album.id }};
+        let isSelectMode = false;
+        const selectedPhotoIds = new Set();
+        let currentPreview = [];
+        const excludedPreviewIds = new Set();
+
         document.addEventListener('DOMContentLoaded', function() {
             var gallery = document.getElementById('gallery');
             if (gallery && typeof Viewer !== 'undefined') {
@@ -151,6 +180,7 @@
                     navbar: true,
                     title: false,
                     filter: function(img) {
+                        if (isSelectMode) return false;
                         return img.tagName === 'IMG' && !img.closest('.placeholder-slot');
                     }
                 });
@@ -160,6 +190,9 @@
             if (candidatesBtn) {
                 candidatesBtn.addEventListener('click', showCandidatesModal);
             }
+
+            initSelectMode();
+            initBatchRename();
         });
 
         function showToast(message, type = 'success') {
@@ -198,6 +231,352 @@
                 showToast('网络错误', 'error');
             });
             return false;
+        }
+
+        function initSelectMode() {
+            const toggleBtn = document.getElementById('toggle-select-mode-btn');
+            const actionBar = document.getElementById('batch-action-bar');
+            const clearBtn = document.getElementById('clear-selection-btn');
+            const checkboxes = document.querySelectorAll('.photo-select-checkbox');
+            const selectedBadges = document.querySelectorAll('.photo-selected-badge');
+            const countEl = document.getElementById('selected-count');
+
+            function updateSelectionUI() {
+                countEl.textContent = selectedPhotoIds.size;
+                document.querySelectorAll('.photo-select').forEach(cb => {
+                    const id = parseInt(cb.dataset.photoId);
+                    cb.checked = selectedPhotoIds.has(id);
+                    const badge = cb.closest('.photo-item').querySelector('.photo-selected-badge');
+                    if (badge) {
+                        badge.classList.toggle('hidden', !cb.checked);
+                    }
+                });
+            }
+
+            function setSelectMode(enabled) {
+                isSelectMode = enabled;
+                if (enabled) {
+                    toggleBtn.innerHTML = '<svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>退出多选';
+                    toggleBtn.classList.remove('bg-white', 'hover:bg-gray-50', 'text-gray-700', 'border-gray-300');
+                    toggleBtn.classList.add('bg-primary', 'hover:bg-blue-600', 'text-white', 'border-primary');
+                    checkboxes.forEach(el => el.classList.remove('hidden'));
+                    actionBar.classList.remove('hidden');
+                    actionBar.classList.add('flex');
+                } else {
+                    toggleBtn.innerHTML = '<svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path></svg>多选';
+                    toggleBtn.classList.add('bg-white', 'hover:bg-gray-50', 'text-gray-700', 'border-gray-300');
+                    toggleBtn.classList.remove('bg-primary', 'hover:bg-blue-600', 'text-white', 'border-primary');
+                    checkboxes.forEach(el => el.classList.add('hidden'));
+                    selectedBadges.forEach(el => el.classList.add('hidden'));
+                    actionBar.classList.add('hidden');
+                    actionBar.classList.remove('flex');
+                    selectedPhotoIds.clear();
+                    updateSelectionUI();
+                }
+            }
+
+            toggleBtn.addEventListener('click', () => setSelectMode(!isSelectMode));
+            clearBtn.addEventListener('click', () => {
+                selectedPhotoIds.clear();
+                updateSelectionUI();
+            });
+
+            document.querySelectorAll('.photo-select').forEach(cb => {
+                cb.addEventListener('change', (e) => {
+                    const id = parseInt(cb.dataset.photoId);
+                    if (cb.checked) {
+                        selectedPhotoIds.add(id);
+                    } else {
+                        selectedPhotoIds.delete(id);
+                    }
+                    updateSelectionUI();
+                    e.stopPropagation();
+                });
+                cb.addEventListener('click', (e) => e.stopPropagation());
+            });
+
+            document.querySelectorAll('.photo-item').forEach(item => {
+                item.addEventListener('click', (e) => {
+                    if (!isSelectMode) return;
+                    if (e.target.closest('.photo-select')) return;
+                    if (e.target.closest('button') || e.target.closest('a')) return;
+                    const cb = item.querySelector('.photo-select');
+                    if (cb) {
+                        cb.checked = !cb.checked;
+                        const id = parseInt(cb.dataset.photoId);
+                        if (cb.checked) selectedPhotoIds.add(id);
+                        else selectedPhotoIds.delete(id);
+                        updateSelectionUI();
+                    }
+                });
+            });
+        }
+
+        function initBatchRename() {
+            const btn = document.getElementById('batch-rename-btn');
+            if (btn) {
+                btn.addEventListener('click', openRenameDialog);
+            }
+        }
+
+        function openRenameDialog() {
+            if (selectedPhotoIds.size === 0) {
+                showToast('请先选择至少一张照片', 'warning');
+                return;
+            }
+            excludedPreviewIds.clear();
+            currentPreview = [];
+            showRenameDialog();
+        }
+
+        function showRenameDialog() {
+            const placeholders = [
+                { token: '{name}', desc: '原始文件名（不含扩展名）' },
+                { token: '{ext}', desc: '原始扩展名' },
+                { token: '{index}', desc: '自动序号（可指定补零位数如 {index:4}）' },
+                { token: '{date:YYYY-MM-DD}', desc: '拍摄/上传日期，格式可自定义（YYYY/MM/DD/HH/mm/SS）' },
+                { token: '{camera}', desc: '相机型号' },
+                { token: '{regex:N}', desc: '从原始文件名匹配正则的第 N 个捕获组' },
+            ];
+
+            const html = `
+                <div class="text-left max-w-4xl" style="min-width: 720px;">
+                    <div class="mb-5 border-b border-gray-100 pb-4">
+                        <p class="text-sm text-gray-500 mb-2">为选中的 <span class="font-bold text-primary">${selectedPhotoIds.size}</span> 张照片配置命名规则</p>
+                        <div class="flex flex-wrap gap-1.5">
+                            ${placeholders.map(p => `
+                                <button type="button" class="token-btn text-xs px-2 py-1 bg-gray-50 hover:bg-primary hover:text-white text-gray-700 rounded border border-gray-200 transition" data-token="${p.token}" title="${p.desc}">
+                                    ${p.token}
+                                </button>
+                            `).join('')}
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-4 mb-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">命名模板</label>
+                            <input type="text" id="rule-template" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-primary focus:border-primary" value="{name}" placeholder="如: Trip_{date:YYYY-MM-DD}_{index}">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">序号补零位数</label>
+                            <input type="number" id="rule-zero-pad" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-primary focus:border-primary" value="3" min="1" max="10">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">起始序号</label>
+                            <input type="number" id="rule-start-index" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-primary focus:border-primary" value="1" min="1">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">排序方式</label>
+                            <select id="rule-sort-by" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-primary focus:border-primary">
+                                <option value="uploaded_at">按上传时间</option>
+                                <option value="exif_taken_at">按拍摄时间</option>
+                                <option value="original_filename">按文件名</option>
+                            </select>
+                        </div>
+                        <div class="col-span-2">
+                            <label class="block text-sm font-medium text-gray-700 mb-1">正则表达式（可选，用于从原文件名提取片段配合 {regex:N} 使用）</label>
+                            <input type="text" id="rule-regex" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm font-mono focus:ring-primary focus:border-primary" placeholder="如: IMG_(\\d+)" />
+                            <p class="text-xs text-gray-400 mt-1">示例：文件名 "IMG_0023.jpg" + 正则 "IMG_(\\d+)" → 使用 "{regex:1}" 将得到 "0023"</p>
+                        </div>
+                        <div class="col-span-2 flex items-center gap-3">
+                            <label class="flex items-center text-sm">
+                                <input type="radio" name="sort-order" value="asc" checked class="mr-1.5 text-primary">
+                                升序
+                            </label>
+                            <label class="flex items-center text-sm">
+                                <input type="radio" name="sort-order" value="desc" class="mr-1.5 text-primary">
+                                降序
+                            </label>
+                            <button type="button" id="refresh-preview-btn" class="ml-auto bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-md text-sm transition flex items-center">
+                                <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                                刷新预览
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="border-t border-gray-100 pt-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <label class="text-sm font-medium text-gray-700">
+                                预览 (<span id="preview-changed-count">0</span> 张将被重命名)
+                            </label>
+                            <div class="flex items-center gap-2 text-xs">
+                                <button type="button" id="select-all-preview-btn" class="text-primary hover:underline">全选</button>
+                                <span class="text-gray-300">|</span>
+                                <button type="button" id="deselect-all-preview-btn" class="text-primary hover:underline">全不选</button>
+                                <span class="text-gray-400 ml-2">取消勾选可从本次操作中排除</span>
+                            </div>
+                        </div>
+                        <div id="preview-table-container" class="max-h-80 overflow-y-auto border border-gray-200 rounded-md">
+                            <div class="flex items-center justify-center py-12 text-gray-400 text-sm">
+                                点击「刷新预览」生成重命名预览
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            Swal.fire({
+                title: '批量重命名',
+                html: html,
+                showCancelButton: true,
+                confirmButtonText: '确认重命名',
+                cancelButtonText: '取消',
+                confirmButtonColor: '#3b82f6',
+                width: '95%',
+                maxWidth: 880,
+                didOpen: () => {
+                    document.querySelectorAll('.token-btn').forEach(btn => {
+                        btn.addEventListener('click', () => {
+                            const input = document.getElementById('rule-template');
+                            const token = btn.dataset.token;
+                            const start = input.selectionStart;
+                            const end = input.selectionEnd;
+                            const val = input.value;
+                            input.value = val.substring(0, start) + token + val.substring(end);
+                            input.focus();
+                            input.setSelectionRange(start + token.length, start + token.length);
+                        });
+                    });
+                    document.getElementById('refresh-preview-btn').addEventListener('click', refreshPreview);
+                    document.getElementById('select-all-preview-btn').addEventListener('click', () => {
+                        document.querySelectorAll('.preview-exclude').forEach(cb => { cb.checked = true; excludedPreviewIds.delete(parseInt(cb.dataset.photoId)); });
+                    });
+                    document.getElementById('deselect-all-preview-btn').addEventListener('click', () => {
+                        document.querySelectorAll('.preview-exclude').forEach(cb => { cb.checked = false; excludedPreviewIds.add(parseInt(cb.dataset.photoId)); });
+                    });
+                    ['rule-template', 'rule-zero-pad', 'rule-start-index', 'rule-regex', 'rule-sort-by'].forEach(id => {
+                        document.getElementById(id).addEventListener('change', refreshPreview);
+                    });
+                    document.querySelectorAll('input[name="sort-order"]').forEach(r => r.addEventListener('change', refreshPreview));
+                    setTimeout(refreshPreview, 100);
+                },
+                preConfirm: async () => {
+                    return await doExecuteRename();
+                }
+            });
+        }
+
+        async function refreshPreview() {
+            const template = document.getElementById('rule-template').value;
+            const zeroPad = parseInt(document.getElementById('rule-zero-pad').value) || 3;
+            const startIndex = parseInt(document.getElementById('rule-start-index').value) || 1;
+            const regexPattern = document.getElementById('rule-regex').value.trim();
+            const sortBy = document.getElementById('rule-sort-by').value;
+            const sortOrder = document.querySelector('input[name="sort-order"]:checked').value;
+
+            const rules = { template, zero_pad: zeroPad, start_index: startIndex, regex_pattern: regexPattern, sort_by: sortBy, sort_order: sortOrder };
+
+            const container = document.getElementById('preview-table-container');
+            container.innerHTML = '<div class="flex items-center justify-center py-12 text-gray-400 text-sm"><svg class="animate-spin w-5 h-5 mr-2 text-primary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>生成预览中...</div>';
+
+            try {
+                const r = await fetch('/rename/api/preview', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ album_id: ALBUM_ID, photo_ids: Array.from(selectedPhotoIds), rules })
+                });
+                const data = await r.json();
+                if (!data.success) throw new Error(data.message);
+                currentPreview = data.preview;
+                document.getElementById('preview-changed-count').textContent = data.changed_count;
+                renderPreviewTable(currentPreview);
+            } catch (e) {
+                container.innerHTML = `<div class="text-red-500 text-sm py-6 text-center">预览生成失败: ${e.message}</div>`;
+            }
+        }
+
+        function renderPreviewTable(preview) {
+            const container = document.getElementById('preview-table-container');
+            if (!preview || preview.length === 0) {
+                container.innerHTML = '<div class="text-gray-400 text-sm py-8 text-center">没有预览数据</div>';
+                return;
+            }
+            const rows = preview.map((item, idx) => {
+                const isExcluded = excludedPreviewIds.has(item.photo_id);
+                const diffClass = item.changed ? '' : 'text-gray-400';
+                const changedBadge = item.changed
+                    ? '<span class="text-[10px] px-1.5 py-0.5 bg-green-50 text-green-600 rounded">将重命名</span>'
+                    : '<span class="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded">不变</span>';
+                return `
+                    <div class="flex items-center gap-3 px-3 py-2 border-b border-gray-100 hover:bg-gray-50 ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}">
+                        <input type="checkbox" class="preview-exclude w-4 h-4 text-primary rounded" data-photo-id="${item.photo_id}" ${!isExcluded ? 'checked' : ''} title="取消勾选以排除该项">
+                        <img src="${item.thumbnail}" class="w-10 h-10 object-cover rounded border border-gray-200">
+                        <div class="flex-1 min-w-0 flex items-center gap-3 ${diffClass}">
+                            <div class="flex-1 min-w-0">
+                                <div class="text-xs text-gray-500">原名称</div>
+                                <div class="text-sm font-mono truncate">${escapeHtml(item.old_name)}</div>
+                            </div>
+                            <svg class="w-4 h-4 text-gray-300 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"></path></svg>
+                            <div class="flex-1 min-w-0">
+                                <div class="text-xs text-gray-500">新名称</div>
+                                <div class="text-sm font-mono truncate font-semibold ${item.changed ? 'text-primary' : ''}">${escapeHtml(item.new_name)}</div>
+                            </div>
+                        </div>
+                        <div class="flex flex-col items-end gap-1 flex-shrink-0">
+                            ${changedBadge}
+                            <div class="text-[10px] text-gray-400">${escapeHtml(item.exif_camera || '')}</div>
+                            <div class="text-[10px] text-gray-400">${escapeHtml(item.exif_date || '')}</div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            container.innerHTML = rows;
+
+            document.querySelectorAll('.preview-exclude').forEach(cb => {
+                cb.addEventListener('change', () => {
+                    const id = parseInt(cb.dataset.photoId);
+                    if (cb.checked) excludedPreviewIds.delete(id);
+                    else excludedPreviewIds.add(id);
+                });
+            });
+        }
+
+        function escapeHtml(s) {
+            const div = document.createElement('div');
+            div.textContent = s || '';
+            return div.innerHTML;
+        }
+
+        async function doExecuteRename() {
+            const template = document.getElementById('rule-template').value;
+            const zeroPad = parseInt(document.getElementById('rule-zero-pad').value) || 3;
+            const startIndex = parseInt(document.getElementById('rule-start-index').value) || 1;
+            const regexPattern = document.getElementById('rule-regex').value.trim();
+            const sortBy = document.getElementById('rule-sort-by').value;
+            const sortOrder = document.querySelector('input[name="sort-order"]:checked').value;
+            const rules = { template, zero_pad: zeroPad, start_index: startIndex, regex_pattern: regexPattern, sort_by: sortBy, sort_order: sortOrder };
+
+            if (currentPreview.length === 0) {
+                Swal.showValidationMessage('请先生成预览');
+                return false;
+            }
+            const willRename = currentPreview.filter(i => i.changed && !excludedPreviewIds.has(i.photo_id)).length;
+            if (willRename === 0) {
+                Swal.showValidationMessage('没有照片将被重命名（可能已全部排除或名称未变化）');
+                return false;
+            }
+
+            try {
+                const r = await fetch('/rename/api/execute', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        album_id: ALBUM_ID,
+                        photo_ids: Array.from(selectedPhotoIds),
+                        rules,
+                        excluded_ids: Array.from(excludedPreviewIds)
+                    })
+                });
+                const data = await r.json();
+                if (!data.success) {
+                    Swal.showValidationMessage(data.message || '执行失败');
+                    return false;
+                }
+                return { success: true, count: data.renamed_count, message: data.message };
+            } catch (e) {
+                Swal.showValidationMessage(`执行失败: ${e.message}`);
+                return false;
+            }
         }
 
         function showCandidatesModal() {
@@ -251,6 +630,11 @@
                 }
             }).then(async (result) => {
                 if (result.isConfirmed && result.value && result.value.length > 0) {
+                    if (typeof result.value === 'object' && result.value.success) {
+                        showToast(result.value.message || '操作成功', 'success');
+                        setTimeout(() => location.reload(), 800);
+                        return;
+                    }
                     let added = 0;
                     for (const id of result.value) {
                         try {

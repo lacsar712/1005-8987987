@@ -45,6 +45,7 @@ class Photo(db.Model):
     album_id = db.Column(db.Integer, db.ForeignKey('album.id'), nullable=False)
     uploaded_at = db.Column(db.DateTime, default=datetime.utcnow)
     exif_taken_at = db.Column(db.DateTime, nullable=True)
+    exif_camera_model = db.Column(db.String(100), nullable=True)
     width = db.Column(db.Integer, nullable=True)
     height = db.Column(db.Integer, nullable=True)
     replaced_placeholder_id = db.Column(db.Integer, db.ForeignKey('photo_placeholder.id'), nullable=True)
@@ -255,4 +256,38 @@ class WatermarkBatchTask(db.Model):
             'started_at': self.started_at.isoformat() if self.started_at else None,
             'completed_at': self.completed_at.isoformat() if self.completed_at else None,
             'error_message': self.error_message,
+        }
+
+
+class RenameHistory(db.Model):
+    """批量重命名历史记录（用于 undo 回滚）"""
+    id = db.Column(db.Integer, primary_key=True)
+    album_id = db.Column(db.Integer, db.ForeignKey('album.id'), nullable=True)
+    rule_description = db.Column(db.String(500), default='')
+    snapshot = db.Column(db.Text, nullable=False)
+    photo_count = db.Column(db.Integer, default=0)
+    is_applied = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    rolled_back_at = db.Column(db.DateTime, nullable=True)
+    album = db.relationship('Album', backref=db.backref('rename_histories', lazy=True))
+
+    def get_snapshot_data(self):
+        try:
+            return json.loads(self.snapshot or '[]')
+        except (json.JSONDecodeError, TypeError):
+            return []
+
+    def set_snapshot_data(self, data):
+        self.snapshot = json.dumps(data, ensure_ascii=False)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'album_id': self.album_id,
+            'album_title': self.album.title if self.album else None,
+            'rule_description': self.rule_description,
+            'photo_count': self.photo_count,
+            'is_applied': self.is_applied,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'rolled_back_at': self.rolled_back_at.isoformat() if self.rolled_back_at else None,
         }

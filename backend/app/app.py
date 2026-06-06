@@ -3,14 +3,15 @@ import uuid
 from flask import Flask, render_template, request, redirect, url_for, flash, abort, send_from_directory, jsonify
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from werkzeug.utils import secure_filename
-from PIL import Image
+from PIL import Image, ExifTags
 from .db import db, Album, Photo, Highlight, CurationConfig, Template, PhotoPlaceholder
 from .services import (
     TimelineService, OnThisDayService, PhotoDateGrouper,
     TemplateSeeder, TemplateService, TemplateApplier, PlaceholderService,
-    WatermarkConfigService, AlbumWatermarkService, WatermarkProcessor
+    WatermarkConfigService, AlbumWatermarkService, WatermarkProcessor,
+    RenameRuleEngine, RenameHistoryService
 )
-from .routes import templates_bp, watermark_bp
+from .routes import templates_bp, watermark_bp, rename_bp
 from datetime import datetime, timedelta
 
 UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static/uploads')
@@ -45,6 +46,7 @@ def create_app():
     db.init_app(app)
     app.register_blueprint(templates_bp)
     app.register_blueprint(watermark_bp)
+    app.register_blueprint(rename_bp)
 
     login_manager = LoginManager()
     login_manager.login_view = 'login'
@@ -194,9 +196,28 @@ def create_app():
                     file.save(save_path)
 
                     width, height = None, None
+                    exif_taken_at = None
+                    exif_camera_model = None
                     try:
                         with Image.open(save_path) as img:
                             width, height = img.size
+                            try:
+                                exif_data = img._getexif()
+                                if exif_data:
+                                    exif_tag_map = {ExifTags.TAGS.get(k, k): v for k, v in exif_data.items()}
+                                    date_str = exif_tag_map.get('DateTimeOriginal') or exif_tag_map.get('DateTime')
+                                    if date_str:
+                                        try:
+                                            exif_taken_at = datetime.strptime(date_str, '%Y:%m:%d %H:%M:%S')
+                                        except (ValueError, TypeError):
+                                            pass
+                                    make = exif_tag_map.get('Make', '') or ''
+                                    model = exif_tag_map.get('Model', '') or ''
+                                    camera_parts = [p.strip() for p in [make, model] if p and p.strip()]
+                                    if camera_parts:
+                                        exif_camera_model = ' '.join(camera_parts)[:100] or None
+                            except Exception:
+                                pass
                     except Exception:
                         pass
 
@@ -221,6 +242,8 @@ def create_app():
                         filename=unique_filename,
                         original_filename=original_filename,
                         album_id=album.id,
+                        exif_taken_at=exif_taken_at,
+                        exif_camera_model=exif_camera_model,
                         width=width,
                         height=height,
                     )
