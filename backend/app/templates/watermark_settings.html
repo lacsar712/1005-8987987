@@ -1,0 +1,978 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="mb-6">
+    <a href="{{ url_for('index') }}" class="text-gray-500 hover:text-gray-700 text-sm flex items-center mb-4">
+        <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+        返回首页
+    </a>
+    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+            <h1 class="text-3xl font-bold text-gray-900">水印设置</h1>
+            <p class="text-gray-500 mt-1">配置全局水印、相册覆盖规则，并批量补打历史照片水印</p>
+        </div>
+    </div>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-5 gap-6">
+    <div class="lg:col-span-3 space-y-6">
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+            <div class="p-5 border-b border-gray-100 flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center">
+                        <svg class="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                    </div>
+                    <div>
+                        <h2 class="text-lg font-semibold text-gray-900">全局水印开关</h2>
+                        <p class="text-xs text-gray-500">开启后，新上传照片将自动叠加水印</p>
+                    </div>
+                </div>
+                <label class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" id="global-toggle" class="sr-only peer">
+                    <div class="w-14 h-7 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-100 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[4px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-primary"></div>
+                </label>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+            <div class="p-5 border-b border-gray-100">
+                <h2 class="text-lg font-semibold text-gray-900">水印类型</h2>
+            </div>
+            <div class="p-5">
+                <div class="flex gap-3 mb-5">
+                    <button id="type-text-btn" class="flex-1 px-4 py-3 rounded-lg border-2 border-primary bg-blue-50 text-primary font-medium transition">
+                        <span class="block text-lg mb-1">📝</span>
+                        文字水印
+                    </button>
+                    <button id="type-image-btn" class="flex-1 px-4 py-3 rounded-lg border-2 border-gray-200 text-gray-500 font-medium hover:border-gray-300 transition">
+                        <span class="block text-lg mb-1">🖼️</span>
+                        PNG 图片水印
+                    </button>
+                </div>
+
+                <div id="text-panel" class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1.5">水印文字</label>
+                        <input type="text" id="text-content" placeholder="例如：© 在线相册" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none transition">
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1.5">字号 <span id="font-size-val" class="text-gray-400">32px</span></label>
+                            <input type="range" id="text-font-size" min="12" max="96" value="32" class="w-full accent-primary">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1.5">透明度 <span id="text-opacity-val" class="text-gray-400">60%</span></label>
+                            <input type="range" id="text-opacity" min="0" max="100" value="60" class="w-full accent-primary">
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1.5">文字颜色</label>
+                            <div class="flex items-center gap-2">
+                                <input type="color" id="text-color" value="#ffffff" class="w-10 h-10 rounded border border-gray-200 cursor-pointer">
+                                <input type="text" id="text-color-hex" value="#ffffff" class="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-primary focus:border-primary outline-none">
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1.5">描边</label>
+                            <div class="flex items-center gap-3">
+                                <label class="inline-flex items-center cursor-pointer">
+                                    <input type="checkbox" id="text-stroke" class="sr-only peer" checked>
+                                    <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                                    <span class="ml-2 text-sm text-gray-600">启用</span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="stroke-options" class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1.5">描边颜色</label>
+                            <div class="flex items-center gap-2">
+                                <input type="color" id="text-stroke-color" value="#000000" class="w-10 h-10 rounded border border-gray-200 cursor-pointer">
+                                <input type="text" id="text-stroke-color-hex" value="#000000" class="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-primary focus:border-primary outline-none">
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1.5">描边宽度 <span id="stroke-width-val" class="text-gray-400">2px</span></label>
+                            <input type="range" id="text-stroke-width" min="0" max="8" value="2" class="w-full accent-primary">
+                        </div>
+                    </div>
+                </div>
+
+                <div id="image-panel" class="space-y-4 hidden">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1.5">水印图片（PNG）</label>
+                        <div id="image-upload-area" class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-primary transition cursor-pointer">
+                            <input type="file" id="watermark-image-input" accept="image/png" class="hidden">
+                            <div id="image-placeholder">
+                                <svg class="w-12 h-12 mx-auto text-gray-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                                <p class="text-sm text-gray-500">点击或拖拽上传 PNG 水印图片</p>
+                                <p class="text-xs text-gray-400 mt-1">建议使用带透明通道的 PNG</p>
+                            </div>
+                            <div id="image-preview-container" class="hidden">
+                                <img id="current-watermark-preview" class="max-h-32 mx-auto mb-2" alt="水印预览">
+                                <button type="button" id="remove-watermark-image" class="text-sm text-red-500 hover:text-red-700">删除水印图片</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1.5">图片比例 <span id="image-scale-val" class="text-gray-400">15%</span></label>
+                            <input type="range" id="image-scale" min="1" max="50" value="15" class="w-full accent-primary">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1.5">透明度 <span id="image-opacity-val" class="text-gray-400">70%</span></label>
+                            <input type="range" id="image-opacity" min="0" max="100" value="70" class="w-full accent-primary">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-6 pt-5 border-t border-gray-100">
+                    <div class="flex items-center justify-between mb-3">
+                        <h3 class="text-sm font-medium text-gray-700">九宫格位置</h3>
+                        <label class="inline-flex items-center cursor-pointer">
+                            <input type="checkbox" id="tiling-toggle" class="sr-only peer">
+                            <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                            <span class="ml-2 text-sm text-gray-600">平铺模式</span>
+                        </label>
+                    </div>
+
+                    <div id="position-picker" class="grid grid-cols-3 gap-2 max-w-[240px]">
+                        {% set positions = [
+                            ('top-left', '↖'), ('top-center', '↑'), ('top-right', '↗'),
+                            ('middle-left', '←'), ('center', '⊙'), ('middle-right', '→'),
+                            ('bottom-left', '↙'), ('bottom-center', '↓'), ('bottom-right', '↘')
+                        ] %}
+                        {% for pos_val, pos_icon in positions %}
+                        <button type="button" data-position="{{ pos_val }}" class="pos-btn h-14 rounded-lg border-2 border-gray-200 text-gray-400 hover:border-gray-300 text-2xl transition">
+                            {{ pos_icon }}
+                        </button>
+                        {% endfor %}
+                    </div>
+
+                    <div id="tiling-options" class="mt-4 grid grid-cols-2 gap-4 hidden">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1.5">平铺间距 <span id="tiling-spacing-val" class="text-gray-400">150px</span></label>
+                            <input type="range" id="tiling-spacing" min="50" max="400" value="150" class="w-full accent-primary">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1.5">旋转角度 <span id="tiling-angle-val" class="text-gray-400">-30°</span></label>
+                            <input type="range" id="tiling-angle" min="-90" max="90" value="-30" class="w-full accent-primary">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-6 pt-5 border-t border-gray-100">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h3 class="text-sm font-medium text-gray-700">自适应对比度</h3>
+                            <p class="text-xs text-gray-500 mt-0.5">根据图片局部亮度自动切换水印颜色或描边</p>
+                        </div>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" id="adaptive-contrast" class="sr-only peer" checked>
+                            <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                        </label>
+                    </div>
+                </div>
+            </div>
+            <div class="px-5 py-4 bg-gray-50 border-t border-gray-100 flex justify-end gap-3">
+                <button onclick="resetToDefaults()" class="px-5 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 transition">恢复默认</button>
+                <button onclick="saveConfig()" class="px-5 py-2 bg-primary hover:bg-blue-600 text-white rounded-lg shadow transition flex items-center">
+                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                    保存设置
+                </button>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+            <div class="p-5 border-b border-gray-100">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h2 class="text-lg font-semibold text-gray-900">相册覆盖规则</h2>
+                        <p class="text-xs text-gray-500 mt-0.5">为指定相册设置不同的水印文字或位置</p>
+                    </div>
+                    <button onclick="openOverrideModal()" class="px-3 py-1.5 text-sm bg-primary hover:bg-blue-600 text-white rounded-lg transition flex items-center">
+                        <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                        新增覆盖
+                    </button>
+                </div>
+            </div>
+            <div id="overrides-list" class="divide-y divide-gray-100">
+                <div class="p-8 text-center text-gray-400 text-sm">
+                    暂无相册覆盖规则
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+            <div class="p-5 border-b border-gray-100">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h2 class="text-lg font-semibold text-gray-900">批量补打水印</h2>
+                        <p class="text-xs text-gray-500 mt-0.5">对已上传的历史照片重新应用当前水印配置</p>
+                    </div>
+                </div>
+            </div>
+            <div class="p-5">
+                <div id="batch-task-info" class="hidden mb-4">
+                    <div class="bg-gray-50 rounded-lg p-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <span id="batch-status" class="text-sm font-medium text-gray-700">处理中...</span>
+                            <span id="batch-progress-text" class="text-sm text-gray-500">0 / 0</span>
+                        </div>
+                        <div class="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+                            <div id="batch-progress-bar" class="h-full bg-primary transition-all duration-300" style="width: 0%"></div>
+                        </div>
+                        <div id="batch-error-info" class="mt-2 text-xs text-red-500 hidden"></div>
+                    </div>
+                </div>
+
+                <div class="flex flex-col sm:flex-row gap-3">
+                    <div class="flex-1">
+                        <select id="batch-album-select" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none transition">
+                            <option value="">全部相册</option>
+                            {% for album in albums %}
+                            <option value="{{ album.id }}">{{ album.title }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <button onclick="startBatchTask()" id="batch-start-btn" class="px-5 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg shadow transition flex items-center justify-center">
+                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                        开始批量补打
+                    </button>
+                </div>
+                <p class="text-xs text-gray-400 mt-3">
+                    ⚠️ 批量补打将直接覆盖磁盘上的原始照片文件，建议先备份重要数据。
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <div class="lg:col-span-2">
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden sticky top-20">
+            <div class="p-5 border-b border-gray-100">
+                <h2 class="text-lg font-semibold text-gray-900">实时预览</h2>
+                <p class="text-xs text-gray-500 mt-0.5">参数变更后自动刷新预览</p>
+            </div>
+            <div class="p-5">
+                <div class="aspect-[3/2] bg-gray-100 rounded-lg overflow-hidden relative">
+                    <img id="preview-image" class="w-full h-full object-cover" alt="水印预览">
+                    <div id="preview-loading" class="absolute inset-0 bg-gray-100/80 flex items-center justify-center hidden">
+                        <svg class="animate-spin w-8 h-8 text-primary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                    </div>
+                </div>
+                <div class="mt-4 grid grid-cols-2 gap-2 text-xs">
+                    <div class="bg-gray-50 rounded-lg p-3">
+                        <div class="text-gray-400 mb-1">水印类型</div>
+                        <div id="summary-type" class="text-gray-800 font-medium">文字水印</div>
+                    </div>
+                    <div class="bg-gray-50 rounded-lg p-3">
+                        <div class="text-gray-400 mb-1">位置</div>
+                        <div id="summary-position" class="text-gray-800 font-medium">右下角</div>
+                    </div>
+                    <div class="bg-gray-50 rounded-lg p-3">
+                        <div class="text-gray-400 mb-1">自适应</div>
+                        <div id="summary-adaptive" class="text-gray-800 font-medium">已开启</div>
+                    </div>
+                    <div class="bg-gray-50 rounded-lg p-3">
+                        <div class="text-gray-400 mb-1">平铺</div>
+                        <div id="summary-tiling" class="text-gray-800 font-medium">未开启</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="override-modal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <div class="p-6 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white">
+            <h2 id="override-modal-title" class="text-xl font-bold text-gray-900">新增相册覆盖规则</h2>
+            <button onclick="closeOverrideModal()" class="text-gray-400 hover:text-gray-600">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+        </div>
+        <div class="p-6 space-y-5">
+            <input type="hidden" id="override-edit-id" value="">
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1.5">选择相册 <span class="text-red-500">*</span></label>
+                <select id="override-album" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none transition">
+                    <option value="">请选择相册</option>
+                    {% for album in albums %}
+                    <option value="{{ album.id }}">{{ album.title }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                <div>
+                    <div class="text-sm font-medium text-gray-700">启用此覆盖规则</div>
+                    <div class="text-xs text-gray-500">关闭后该相册不应用任何水印</div>
+                </div>
+                <label class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" id="override-enabled" class="sr-only peer" checked>
+                    <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                </label>
+            </div>
+
+            <div class="flex items-center gap-3">
+                <label class="inline-flex items-center cursor-pointer">
+                    <input type="checkbox" id="override-text-toggle" class="sr-only peer">
+                    <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                    <span class="ml-2 text-sm text-gray-700">覆盖文字</span>
+                </label>
+            </div>
+            <div id="override-text-field" class="hidden">
+                <input type="text" id="override-text-content" placeholder="自定义水印文字" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none transition">
+            </div>
+
+            <div class="flex items-center gap-3">
+                <label class="inline-flex items-center cursor-pointer">
+                    <input type="checkbox" id="override-position-toggle" class="sr-only peer">
+                    <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                    <span class="ml-2 text-sm text-gray-700">覆盖位置</span>
+                </label>
+            </div>
+            <div id="override-position-field" class="hidden">
+                <select id="override-position" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none transition">
+                    <option value="top-left">左上角</option>
+                    <option value="top-center">顶部居中</option>
+                    <option value="top-right">右上角</option>
+                    <option value="middle-left">左中</option>
+                    <option value="center">居中</option>
+                    <option value="middle-right">右中</option>
+                    <option value="bottom-left">左下角</option>
+                    <option value="bottom-center">底部居中</option>
+                    <option value="bottom-right">右下角</option>
+                </select>
+            </div>
+        </div>
+        <div class="p-6 border-t border-gray-100 flex justify-end gap-3 sticky bottom-0 bg-white">
+            <button onclick="closeOverrideModal()" class="px-5 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition">取消</button>
+            <button onclick="saveOverride()" class="px-5 py-2 bg-primary hover:bg-blue-600 text-white rounded-lg shadow transition">保存</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    const POSITION_LABELS = {
+        'top-left': '左上角', 'top-center': '顶部居中', 'top-right': '右上角',
+        'middle-left': '左中', 'center': '居中', 'middle-right': '右中',
+        'bottom-left': '左下角', 'bottom-center': '底部居中', 'bottom-right': '右下角'
+    };
+
+    let currentConfig = null;
+    let currentPosition = 'bottom-right';
+    let currentWatermarkType = 'text';
+    let previewDebounce = null;
+    let batchPollTimer = null;
+
+    function showToast(message, type = 'success') {
+        const Toast = Swal.mixin({
+            toast: true,
+            position: 'top',
+            showConfirmButton: false,
+            timer: 3000,
+            timerProgressBar: true
+        });
+        Toast.fire({ icon: type, title: message });
+    }
+
+    function collectConfigData() {
+        return {
+            enabled: document.getElementById('global-toggle').checked,
+            watermark_type: currentWatermarkType,
+            text_content: document.getElementById('text-content').value,
+            text_font_size: parseInt(document.getElementById('text-font-size').value),
+            text_opacity: parseInt(document.getElementById('text-opacity').value) / 100,
+            text_color: document.getElementById('text-color-hex').value,
+            text_position: currentPosition,
+            text_tiling: document.getElementById('tiling-toggle').checked,
+            text_tiling_spacing: parseInt(document.getElementById('tiling-spacing').value),
+            text_tiling_angle: parseInt(document.getElementById('tiling-angle').value),
+            text_stroke: document.getElementById('text-stroke').checked,
+            text_stroke_color: document.getElementById('text-stroke-color-hex').value,
+            text_stroke_width: parseInt(document.getElementById('text-stroke-width').value),
+            image_scale: parseInt(document.getElementById('image-scale').value) / 100,
+            image_opacity: parseInt(document.getElementById('image-opacity').value) / 100,
+            image_position: currentPosition,
+            image_tiling: document.getElementById('tiling-toggle').checked,
+            image_tiling_spacing: parseInt(document.getElementById('tiling-spacing').value),
+            image_tiling_angle: parseInt(document.getElementById('tiling-angle').value),
+            adaptive_contrast: document.getElementById('adaptive-contrast').checked,
+        };
+    }
+
+    async function saveConfig() {
+        const data = collectConfigData();
+        try {
+            const r = await fetch('/watermark/api/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data),
+            });
+            const result = await r.json();
+            if (result.success) {
+                currentConfig = result.config;
+                showToast('水印设置已保存');
+                refreshPreview();
+                updateSummary();
+            } else {
+                showToast(result.message || '保存失败', 'error');
+            }
+        } catch {
+            showToast('网络错误', 'error');
+        }
+    }
+
+    function refreshPreview() {
+        if (previewDebounce) clearTimeout(previewDebounce);
+        previewDebounce = setTimeout(() => {
+            const data = collectConfigData();
+            document.getElementById('preview-loading').classList.remove('hidden');
+            fetch('/watermark/api/preview', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data),
+            }).then(r => r.blob()).then(blob => {
+                const url = URL.createObjectURL(blob);
+                const img = document.getElementById('preview-image');
+                img.onload = () => {
+                    URL.revokeObjectURL(url);
+                    document.getElementById('preview-loading').classList.add('hidden');
+                };
+                img.src = url;
+            }).catch(() => {
+                document.getElementById('preview-loading').classList.add('hidden');
+            });
+        }, 250);
+    }
+
+    function updateSummary() {
+        document.getElementById('summary-type').textContent =
+            currentWatermarkType === 'text' ? '文字水印' : '图片水印';
+        document.getElementById('summary-position').textContent =
+            POSITION_LABELS[currentPosition] || currentPosition;
+        document.getElementById('summary-adaptive').textContent =
+            document.getElementById('adaptive-contrast').checked ? '已开启' : '未开启';
+        document.getElementById('summary-tiling').textContent =
+            document.getElementById('tiling-toggle').checked ? '已开启' : '未开启';
+    }
+
+    function setWatermarkType(type) {
+        currentWatermarkType = type;
+        const textBtn = document.getElementById('type-text-btn');
+        const imageBtn = document.getElementById('type-image-btn');
+        const textPanel = document.getElementById('text-panel');
+        const imagePanel = document.getElementById('image-panel');
+
+        if (type === 'text') {
+            textBtn.className = 'flex-1 px-4 py-3 rounded-lg border-2 border-primary bg-blue-50 text-primary font-medium transition';
+            imageBtn.className = 'flex-1 px-4 py-3 rounded-lg border-2 border-gray-200 text-gray-500 font-medium hover:border-gray-300 transition';
+            textPanel.classList.remove('hidden');
+            imagePanel.classList.add('hidden');
+        } else {
+            imageBtn.className = 'flex-1 px-4 py-3 rounded-lg border-2 border-primary bg-blue-50 text-primary font-medium transition';
+            textBtn.className = 'flex-1 px-4 py-3 rounded-lg border-2 border-gray-200 text-gray-500 font-medium hover:border-gray-300 transition';
+            imagePanel.classList.remove('hidden');
+            textPanel.classList.add('hidden');
+        }
+        refreshPreview();
+        updateSummary();
+    }
+
+    function setPosition(pos) {
+        currentPosition = pos;
+        document.querySelectorAll('.pos-btn').forEach(btn => {
+            if (btn.dataset.position === pos) {
+                btn.className = 'pos-btn h-14 rounded-lg border-2 border-primary bg-blue-50 text-primary text-2xl transition';
+            } else {
+                btn.className = 'pos-btn h-14 rounded-lg border-2 border-gray-200 text-gray-400 hover:border-gray-300 text-2xl transition';
+            }
+        });
+        refreshPreview();
+        updateSummary();
+    }
+
+    function resetToDefaults() {
+        Swal.fire({
+            title: '恢复默认设置？',
+            text: '所有水印参数将重置为默认值',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#3b82f6',
+            cancelButtonColor: '#6b7280',
+            confirmButtonText: '恢复默认',
+            cancelButtonText: '取消'
+        }).then((result) => {
+            if (!result.isConfirmed) return;
+            document.getElementById('global-toggle').checked = false;
+            setWatermarkType('text');
+            document.getElementById('text-content').value = '© 在线相册';
+            document.getElementById('text-font-size').value = 32;
+            document.getElementById('text-opacity').value = 60;
+            document.getElementById('text-color').value = '#ffffff';
+            document.getElementById('text-color-hex').value = '#ffffff';
+            document.getElementById('text-stroke').checked = true;
+            document.getElementById('text-stroke-color').value = '#000000';
+            document.getElementById('text-stroke-color-hex').value = '#000000';
+            document.getElementById('text-stroke-width').value = 2;
+            document.getElementById('tiling-toggle').checked = false;
+            document.getElementById('tiling-spacing').value = 150;
+            document.getElementById('tiling-angle').value = -30;
+            document.getElementById('adaptive-contrast').checked = true;
+            document.getElementById('image-scale').value = 15;
+            document.getElementById('image-opacity').value = 70;
+            setPosition('bottom-right');
+            updateSliderLabels();
+            refreshPreview();
+            updateSummary();
+            saveConfig();
+        });
+    }
+
+    function updateSliderLabels() {
+        document.getElementById('font-size-val').textContent = document.getElementById('text-font-size').value + 'px';
+        document.getElementById('text-opacity-val').textContent = document.getElementById('text-opacity').value + '%';
+        document.getElementById('stroke-width-val').textContent = document.getElementById('text-stroke-width').value + 'px';
+        document.getElementById('tiling-spacing-val').textContent = document.getElementById('tiling-spacing').value + 'px';
+        document.getElementById('tiling-angle-val').textContent = document.getElementById('tiling-angle').value + '°';
+        document.getElementById('image-scale-val').textContent = document.getElementById('image-scale').value + '%';
+        document.getElementById('image-opacity-val').textContent = document.getElementById('image-opacity').value + '%';
+    }
+
+    async function loadOverrides() {
+        try {
+            const r = await fetch('/watermark/api/overrides');
+            const data = await r.json();
+            renderOverrides(data.albums || []);
+        } catch {}
+    }
+
+    function renderOverrides(albums) {
+        const container = document.getElementById('overrides-list');
+        const withOverride = albums.filter(a => a.has_override);
+
+        if (withOverride.length === 0) {
+            container.innerHTML = `<div class="p-8 text-center text-gray-400 text-sm">暂无相册覆盖规则</div>`;
+            return;
+        }
+
+        container.innerHTML = withOverride.map(a => {
+            const o = a.override;
+            const parts = [];
+            if (o.override_text && o.text_content) parts.push(`文字: ${o.text_content}`);
+            if (o.override_position) parts.push(`位置: ${POSITION_LABELS[o.text_position] || o.text_position}`);
+            const desc = parts.length ? parts.join(' | ') : '仅启用/禁用开关';
+            return `
+                <div class="p-4 flex items-center justify-between hover:bg-gray-50 transition">
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-2">
+                            <span class="font-medium text-gray-900 truncate">${a.album_title}</span>
+                            ${o.enabled
+                                ? '<span class="text-[10px] px-1.5 py-0.5 bg-green-50 text-green-600 rounded">已启用</span>'
+                                : '<span class="text-[10px] px-1.5 py-0.5 bg-red-50 text-red-600 rounded">已禁用</span>'}
+                        </div>
+                        <div class="text-xs text-gray-500 mt-0.5 truncate">${desc}</div>
+                    </div>
+                    <div class="flex gap-2 ml-3">
+                        <button onclick="editOverride(${a.album_id})" class="px-3 py-1 text-sm border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 transition">编辑</button>
+                        <button onclick="deleteOverride(${a.album_id})" class="px-3 py-1 text-sm border border-red-200 rounded-lg text-red-600 hover:bg-red-50 transition">删除</button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function openOverrideModal() {
+        document.getElementById('override-modal-title').textContent = '新增相册覆盖规则';
+        document.getElementById('override-edit-id').value = '';
+        document.getElementById('override-album').value = '';
+        document.getElementById('override-enabled').checked = true;
+        document.getElementById('override-text-toggle').checked = false;
+        document.getElementById('override-text-field').classList.add('hidden');
+        document.getElementById('override-text-content').value = '';
+        document.getElementById('override-position-toggle').checked = false;
+        document.getElementById('override-position-field').classList.add('hidden');
+        document.getElementById('override-position').value = 'bottom-right';
+        document.getElementById('override-modal').classList.remove('hidden');
+    }
+
+    async function editOverride(albumId) {
+        try {
+            const r = await fetch(`/watermark/api/overrides/${albumId}`);
+            const data = await r.json();
+            const o = data.override;
+            if (!o) return;
+
+            document.getElementById('override-modal-title').textContent = '编辑相册覆盖规则';
+            document.getElementById('override-edit-id').value = albumId;
+            document.getElementById('override-album').value = albumId;
+            document.getElementById('override-enabled').checked = o.enabled;
+            document.getElementById('override-text-toggle').checked = o.override_text;
+            document.getElementById('override-text-field').classList.toggle('hidden', !o.override_text);
+            document.getElementById('override-text-content').value = o.text_content || '';
+            document.getElementById('override-position-toggle').checked = o.override_position;
+            document.getElementById('override-position-field').classList.toggle('hidden', !o.override_position);
+            document.getElementById('override-position').value = o.text_position || 'bottom-right';
+            document.getElementById('override-modal').classList.remove('hidden');
+        } catch {}
+    }
+
+    function closeOverrideModal() {
+        document.getElementById('override-modal').classList.add('hidden');
+    }
+
+    async function saveOverride() {
+        const albumId = document.getElementById('override-album').value;
+        if (!albumId) {
+            showToast('请选择相册', 'error');
+            return;
+        }
+
+        const overrideText = document.getElementById('override-text-toggle').checked;
+        const overridePosition = document.getElementById('override-position-toggle').checked;
+
+        const data = {
+            enabled: document.getElementById('override-enabled').checked,
+            override_text: overrideText,
+            override_position: overridePosition,
+            text_content: overrideText ? document.getElementById('override-text-content').value : '',
+            text_position: overridePosition ? document.getElementById('override-position').value : '',
+        };
+
+        try {
+            const r = await fetch(`/watermark/api/overrides/${albumId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data),
+            });
+            const result = await r.json();
+            if (result.success) {
+                showToast('覆盖规则已保存');
+                closeOverrideModal();
+                loadOverrides();
+            } else {
+                showToast(result.message || '保存失败', 'error');
+            }
+        } catch {
+            showToast('网络错误', 'error');
+        }
+    }
+
+    function deleteOverride(albumId) {
+        Swal.fire({
+            title: '删除此覆盖规则？',
+            text: '该相册将恢复使用全局水印设置',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#ef4444',
+            cancelButtonColor: '#6b7280',
+            confirmButtonText: '删除',
+            cancelButtonText: '取消'
+        }).then(async (result) => {
+            if (!result.isConfirmed) return;
+            try {
+                const r = await fetch(`/watermark/api/overrides/${albumId}`, { method: 'DELETE' });
+                const data = await r.json();
+                if (data.success) {
+                    showToast('已删除覆盖规则');
+                    loadOverrides();
+                } else {
+                    showToast(data.message || '删除失败', 'error');
+                }
+            } catch {
+                showToast('网络错误', 'error');
+            }
+        });
+    }
+
+    async function checkBatchStatus() {
+        try {
+            const r = await fetch('/watermark/api/batch/status');
+            const data = await r.json();
+            renderBatchStatus(data);
+            if (data.is_running) {
+                if (!batchPollTimer) {
+                    batchPollTimer = setInterval(checkBatchStatus, 2000);
+                }
+            } else {
+                if (batchPollTimer) {
+                    clearInterval(batchPollTimer);
+                    batchPollTimer = null;
+                }
+            }
+        } catch {}
+    }
+
+    function renderBatchStatus(data) {
+        const infoBox = document.getElementById('batch-task-info');
+        const startBtn = document.getElementById('batch-start-btn');
+
+        if (!data.task) {
+            infoBox.classList.add('hidden');
+            startBtn.disabled = false;
+            startBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+            return;
+        }
+
+        infoBox.classList.remove('hidden');
+        const t = data.task;
+        const statusLabels = {
+            pending: '等待开始...',
+            running: '处理中...',
+            completed: '已完成',
+            completed_with_errors: '完成（含错误）',
+            failed: '失败'
+        };
+        document.getElementById('batch-status').textContent = statusLabels[t.status] || t.status;
+        document.getElementById('batch-progress-text').textContent = `${t.processed} / ${t.total} (${t.progress}%)`;
+        document.getElementById('batch-progress-bar').style.width = `${t.progress}%`;
+
+        const errBox = document.getElementById('batch-error-info');
+        if (t.failed_count > 0) {
+            errBox.classList.remove('hidden');
+            errBox.textContent = `失败 ${t.failed_count} 张`;
+        } else {
+            errBox.classList.add('hidden');
+        }
+
+        if (data.is_running || t.status === 'running') {
+            startBtn.disabled = true;
+            startBtn.classList.add('opacity-50', 'cursor-not-allowed');
+        } else {
+            startBtn.disabled = false;
+            startBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+        }
+    }
+
+    async function startBatchTask() {
+        const albumId = document.getElementById('batch-album-select').value;
+
+        Swal.fire({
+            title: '确认批量补打水印？',
+            text: albumId ? '将对所选相册的所有历史照片重新应用水印。' : '将对所有相册的历史照片重新应用水印。此操作将覆盖磁盘文件，建议先备份。',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#f59e0b',
+            cancelButtonColor: '#6b7280',
+            confirmButtonText: '开始补打',
+            cancelButtonText: '取消'
+        }).then(async (result) => {
+            if (!result.isConfirmed) return;
+            try {
+                const r = await fetch('/watermark/api/batch/start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ album_id: albumId ? parseInt(albumId) : null }),
+                });
+                const data = await r.json();
+                if (data.success) {
+                    showToast('批量补打任务已启动');
+                    if (!batchPollTimer) {
+                        batchPollTimer = setInterval(checkBatchStatus, 2000);
+                    }
+                    checkBatchStatus();
+                } else {
+                    showToast(data.message || '启动失败', 'error');
+                }
+            } catch {
+                showToast('网络错误', 'error');
+            }
+        });
+    }
+
+    async function uploadWatermarkImage(file) {
+        const formData = new FormData();
+        formData.append('image', file);
+        try {
+            const r = await fetch('/watermark/api/image/upload', {
+                method: 'POST',
+                body: formData,
+            });
+            const data = await r.json();
+            if (data.success) {
+                showToast('水印图片已上传');
+                currentConfig = data.config;
+                showWatermarkImagePreview(file);
+                refreshPreview();
+            } else {
+                showToast(data.message || '上传失败', 'error');
+            }
+        } catch {
+            showToast('网络错误', 'error');
+        }
+    }
+
+    async function removeWatermarkImage() {
+        try {
+            const r = await fetch('/watermark/api/image/delete', { method: 'POST' });
+            const data = await r.json();
+            if (data.success) {
+                showToast('水印图片已删除');
+                document.getElementById('image-placeholder').classList.remove('hidden');
+                document.getElementById('image-preview-container').classList.add('hidden');
+                refreshPreview();
+            }
+        } catch {}
+    }
+
+    function showWatermarkImagePreview(file) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            document.getElementById('current-watermark-preview').src = e.target.result;
+            document.getElementById('image-placeholder').classList.add('hidden');
+            document.getElementById('image-preview-container').classList.remove('hidden');
+        };
+        reader.readAsDataURL(file);
+    }
+
+    async function loadConfig() {
+        try {
+            const r = await fetch('/watermark/api/config');
+            const data = await r.json();
+            currentConfig = data.config;
+            applyConfigToUI(currentConfig);
+            refreshPreview();
+            updateSummary();
+        } catch {}
+    }
+
+    function applyConfigToUI(cfg) {
+        document.getElementById('global-toggle').checked = cfg.enabled;
+        setWatermarkType(cfg.watermark_type);
+        document.getElementById('text-content').value = cfg.text_content || '';
+        document.getElementById('text-font-size').value = cfg.text_font_size;
+        document.getElementById('text-opacity').value = Math.round(cfg.text_opacity * 100);
+        document.getElementById('text-color').value = cfg.text_color;
+        document.getElementById('text-color-hex').value = cfg.text_color;
+        document.getElementById('text-stroke').checked = cfg.text_stroke;
+        document.getElementById('text-stroke-color').value = cfg.text_stroke_color;
+        document.getElementById('text-stroke-color-hex').value = cfg.text_stroke_color;
+        document.getElementById('text-stroke-width').value = cfg.text_stroke_width;
+        document.getElementById('tiling-toggle').checked = cfg.text_tiling;
+        document.getElementById('tiling-spacing').value = cfg.text_tiling_spacing;
+        document.getElementById('tiling-angle').value = cfg.text_tiling_angle;
+        document.getElementById('adaptive-contrast').checked = cfg.adaptive_contrast;
+        document.getElementById('image-scale').value = Math.round(cfg.image_scale * 100);
+        document.getElementById('image-opacity').value = Math.round(cfg.image_opacity * 100);
+        setPosition(cfg.watermark_type === 'text' ? cfg.text_position : cfg.image_position);
+        document.getElementById('tiling-options').classList.toggle('hidden', !cfg.text_tiling);
+        document.getElementById('position-picker').classList.toggle('hidden', cfg.text_tiling);
+        document.getElementById('stroke-options').classList.toggle('hidden', !cfg.text_stroke);
+        updateSliderLabels();
+
+        if (cfg.image_filename) {
+            document.getElementById('image-placeholder').classList.add('hidden');
+            document.getElementById('image-preview-container').classList.remove('hidden');
+            const ts = Date.now();
+            document.getElementById('current-watermark-preview').src = `/static/watermarks/${cfg.image_filename}?t=${ts}`;
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        loadConfig();
+        loadOverrides();
+        checkBatchStatus();
+
+        document.getElementById('type-text-btn').addEventListener('click', () => setWatermarkType('text'));
+        document.getElementById('type-image-btn').addEventListener('click', () => setWatermarkType('image'));
+
+        document.querySelectorAll('.pos-btn').forEach(btn => {
+            btn.addEventListener('click', () => setPosition(btn.dataset.position));
+        });
+
+        const sliderIds = ['text-font-size', 'text-opacity', 'text-stroke-width', 'tiling-spacing', 'tiling-angle', 'image-scale', 'image-opacity'];
+        sliderIds.forEach(id => {
+            document.getElementById(id).addEventListener('input', () => {
+                updateSliderLabels();
+                refreshPreview();
+            });
+        });
+
+        document.getElementById('text-color').addEventListener('input', (e) => {
+            document.getElementById('text-color-hex').value = e.target.value;
+            refreshPreview();
+        });
+        document.getElementById('text-color-hex').addEventListener('input', (e) => {
+            const val = e.target.value;
+            if (/^#[0-9a-fA-F]{6}$/.test(val)) {
+                document.getElementById('text-color').value = val;
+                refreshPreview();
+            }
+        });
+
+        document.getElementById('text-stroke-color').addEventListener('input', (e) => {
+            document.getElementById('text-stroke-color-hex').value = e.target.value;
+            refreshPreview();
+        });
+        document.getElementById('text-stroke-color-hex').addEventListener('input', (e) => {
+            const val = e.target.value;
+            if (/^#[0-9a-fA-F]{6}$/.test(val)) {
+                document.getElementById('text-stroke-color').value = val;
+                refreshPreview();
+            }
+        });
+
+        document.getElementById('text-content').addEventListener('input', refreshPreview);
+
+        ['global-toggle', 'text-stroke', 'tiling-toggle', 'adaptive-contrast'].forEach(id => {
+            document.getElementById(id).addEventListener('change', () => {
+                updateSummary();
+                refreshPreview();
+                if (id === 'tiling-toggle') {
+                    document.getElementById('tiling-options').classList.toggle('hidden', !document.getElementById('tiling-toggle').checked);
+                    document.getElementById('position-picker').classList.toggle('hidden', document.getElementById('tiling-toggle').checked);
+                }
+                if (id === 'text-stroke') {
+                    document.getElementById('stroke-options').classList.toggle('hidden', !document.getElementById('text-stroke').checked);
+                }
+            });
+        });
+
+        document.getElementById('override-text-toggle').addEventListener('change', (e) => {
+            document.getElementById('override-text-field').classList.toggle('hidden', !e.target.checked);
+        });
+        document.getElementById('override-position-toggle').addEventListener('change', (e) => {
+            document.getElementById('override-position-field').classList.toggle('hidden', !e.target.checked);
+        });
+
+        const uploadArea = document.getElementById('image-upload-area');
+        const fileInput = document.getElementById('watermark-image-input');
+        uploadArea.addEventListener('click', () => fileInput.click());
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('border-primary');
+        });
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('border-primary');
+        });
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('border-primary');
+            if (e.dataTransfer.files.length > 0) {
+                const file = e.dataTransfer.files[0];
+                if (file.type === 'image/png') {
+                    uploadWatermarkImage(file);
+                } else {
+                    showToast('仅支持 PNG 格式', 'error');
+                }
+            }
+        });
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                uploadWatermarkImage(e.target.files[0]);
+            }
+        });
+
+        document.getElementById('remove-watermark-image').addEventListener('click', (e) => {
+            e.stopPropagation();
+            removeWatermarkImage();
+        });
+    });
+</script>
+{% endblock %}

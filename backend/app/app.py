@@ -7,9 +7,10 @@ from PIL import Image
 from .db import db, Album, Photo, Highlight, CurationConfig, Template, PhotoPlaceholder
 from .services import (
     TimelineService, OnThisDayService, PhotoDateGrouper,
-    TemplateSeeder, TemplateService, TemplateApplier, PlaceholderService
+    TemplateSeeder, TemplateService, TemplateApplier, PlaceholderService,
+    WatermarkConfigService, AlbumWatermarkService, WatermarkProcessor
 )
-from .routes import templates_bp
+from .routes import templates_bp, watermark_bp
 from datetime import datetime, timedelta
 
 UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static/uploads')
@@ -43,6 +44,7 @@ def create_app():
 
     db.init_app(app)
     app.register_blueprint(templates_bp)
+    app.register_blueprint(watermark_bp)
 
     login_manager = LoginManager()
     login_manager.login_view = 'login'
@@ -64,6 +66,7 @@ def create_app():
             db.session.add(default_album)
             db.session.commit()
         get_or_create_curation_config()
+        WatermarkConfigService.get_config()
 
     @app.route('/')
     def index():
@@ -196,6 +199,19 @@ def create_app():
                             width, height = img.size
                     except Exception:
                         pass
+
+                    resolved = AlbumWatermarkService.resolve_effective_config(album.id)
+                    if resolved and resolved['enabled']:
+                        try:
+                            wm_processor = WatermarkProcessor(app.config['UPLOAD_FOLDER'])
+                            wm_processor.process_image(
+                                save_path,
+                                resolved['config'],
+                                effective_text=resolved['effective_text'],
+                                effective_position=resolved['effective_position'],
+                            )
+                        except Exception:
+                            pass
 
                     photo_aspect_ratio = None
                     if width and height and height > 0:

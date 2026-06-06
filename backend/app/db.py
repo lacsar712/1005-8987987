@@ -147,3 +147,112 @@ class PhotoPlaceholder(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     replaced_photo = db.relationship('Photo', backref='replaced_placeholder', lazy=True, uselist=False,
                                      foreign_keys='Photo.replaced_placeholder_id')
+
+
+class WatermarkConfig(db.Model):
+    """全局水印配置"""
+    id = db.Column(db.Integer, primary_key=True)
+    enabled = db.Column(db.Boolean, default=False)
+    watermark_type = db.Column(db.String(10), default='text')
+
+    text_content = db.Column(db.String(200), default='© 在线相册')
+    text_font_size = db.Column(db.Integer, default=32)
+    text_opacity = db.Column(db.Float, default=0.6)
+    text_color = db.Column(db.String(20), default='#ffffff')
+    text_position = db.Column(db.String(20), default='bottom-right')
+    text_tiling = db.Column(db.Boolean, default=False)
+    text_tiling_spacing = db.Column(db.Integer, default=150)
+    text_tiling_angle = db.Column(db.Integer, default=-30)
+    text_stroke = db.Column(db.Boolean, default=True)
+    text_stroke_color = db.Column(db.String(20), default='#000000')
+    text_stroke_width = db.Column(db.Integer, default=2)
+
+    image_filename = db.Column(db.String(200), default='')
+    image_scale = db.Column(db.Float, default=0.15)
+    image_opacity = db.Column(db.Float, default=0.7)
+    image_position = db.Column(db.String(20), default='bottom-right')
+    image_tiling = db.Column(db.Boolean, default=False)
+    image_tiling_spacing = db.Column(db.Integer, default=200)
+    image_tiling_angle = db.Column(db.Integer, default=0)
+
+    adaptive_contrast = db.Column(db.Boolean, default=True)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'enabled': self.enabled,
+            'watermark_type': self.watermark_type,
+            'text_content': self.text_content,
+            'text_font_size': self.text_font_size,
+            'text_opacity': self.text_opacity,
+            'text_color': self.text_color,
+            'text_position': self.text_position,
+            'text_tiling': self.text_tiling,
+            'text_tiling_spacing': self.text_tiling_spacing,
+            'text_tiling_angle': self.text_tiling_angle,
+            'text_stroke': self.text_stroke,
+            'text_stroke_color': self.text_stroke_color,
+            'text_stroke_width': self.text_stroke_width,
+            'image_filename': self.image_filename,
+            'image_scale': self.image_scale,
+            'image_opacity': self.image_opacity,
+            'image_position': self.image_position,
+            'image_tiling': self.image_tiling,
+            'image_tiling_spacing': self.image_tiling_spacing,
+            'image_tiling_angle': self.image_tiling_angle,
+            'adaptive_contrast': self.adaptive_contrast,
+        }
+
+
+class AlbumWatermarkOverride(db.Model):
+    """相册级水印覆盖配置"""
+    id = db.Column(db.Integer, primary_key=True)
+    album_id = db.Column(db.Integer, db.ForeignKey('album.id'), nullable=False, unique=True)
+    enabled = db.Column(db.Boolean, default=True)
+    override_text = db.Column(db.Boolean, default=False)
+    override_position = db.Column(db.Boolean, default=False)
+    text_content = db.Column(db.String(200), default='')
+    text_position = db.Column(db.String(20), default='')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    album = db.relationship('Album', backref=db.backref('watermark_override', uselist=False, lazy=True))
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'album_id': self.album_id,
+            'enabled': self.enabled,
+            'override_text': self.override_text,
+            'override_position': self.override_position,
+            'text_content': self.text_content,
+            'text_position': self.text_position,
+        }
+
+
+class WatermarkBatchTask(db.Model):
+    """批量补打水印任务"""
+    id = db.Column(db.Integer, primary_key=True)
+    status = db.Column(db.String(20), default='pending')
+    total = db.Column(db.Integer, default=0)
+    processed = db.Column(db.Integer, default=0)
+    failed_count = db.Column(db.Integer, default=0)
+    album_id = db.Column(db.Integer, db.ForeignKey('album.id'), nullable=True)
+    started_at = db.Column(db.DateTime, nullable=True)
+    completed_at = db.Column(db.DateTime, nullable=True)
+    error_message = db.Column(db.Text, default='')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'status': self.status,
+            'total': self.total,
+            'processed': self.processed,
+            'failed_count': self.failed_count,
+            'album_id': self.album_id,
+            'progress': round(self.processed / self.total * 100, 1) if self.total > 0 else 0,
+            'started_at': self.started_at.isoformat() if self.started_at else None,
+            'completed_at': self.completed_at.isoformat() if self.completed_at else None,
+            'error_message': self.error_message,
+        }
