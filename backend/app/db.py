@@ -8,6 +8,7 @@ class Album(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(100), nullable=False)
     description = db.Column(db.Text)
+    is_admin_only = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     photos = db.relationship('Photo', backref='album', lazy=True, cascade="all, delete-orphan")
 
@@ -18,6 +19,7 @@ class Photo(db.Model):
     original_filename = db.Column(db.String(100), nullable=False)
     album_id = db.Column(db.Integer, db.ForeignKey('album.id'), nullable=False)
     uploaded_at = db.Column(db.DateTime, default=datetime.utcnow)
+    exif_taken_at = db.Column(db.DateTime, nullable=True)
     highlights = db.relationship('Highlight', backref='photo', lazy=True, cascade="all, delete-orphan")
 
 class Highlight(db.Model):

@@ -4,6 +4,7 @@ from flask import Flask, render_template, request, redirect, url_for, flash, abo
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from werkzeug.utils import secure_filename
 from .db import db, Album, Photo, Highlight, CurationConfig
+from .services import TimelineService, OnThisDayService, PhotoDateGrouper
 from datetime import datetime, timedelta
 
 UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static/uploads')
@@ -321,6 +322,36 @@ def create_app():
                 pass
         db.session.commit()
         return jsonify({'success': True, 'message': '配置已更新'})
+
+    @app.route('/timeline')
+    def timeline():
+        data = TimelineService.get_timeline_data(use_exif=False)
+        on_this_day = OnThisDayService.get_photos_on_this_day(use_exif=False)
+        return render_template(
+            'timeline.html',
+            timeline_data=data,
+            on_this_day=on_this_day,
+            current_user=current_user
+        )
+
+    @app.route('/api/timeline/photos')
+    def api_timeline_photos():
+        use_exif = request.args.get('mode', 'upload') == 'exif'
+        album_ids_str = request.args.get('albums', '')
+        album_ids = [int(x) for x in album_ids_str.split(',') if x.strip().isdigit()] if album_ids_str else None
+        data = TimelineService.get_timeline_data(album_ids=album_ids, use_exif=use_exif)
+        return jsonify(data)
+
+    @app.route('/api/timeline/albums')
+    def api_timeline_albums():
+        data = TimelineService.get_timeline_data(use_exif=False)
+        return jsonify({'albums': data['albums']})
+
+    @app.route('/api/timeline/on-this-day')
+    def api_timeline_on_this_day():
+        use_exif = request.args.get('mode', 'upload') == 'exif'
+        data = OnThisDayService.get_photos_on_this_day(use_exif=use_exif)
+        return jsonify({'items': data})
 
     return app
 
