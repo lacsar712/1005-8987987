@@ -1,5 +1,6 @@
 from .app import create_app
-from .db import db, Album, Photo
+from .db import db, Album, Photo, Template
+from .services import TemplateSeeder
 import datetime
 import random
 import os
@@ -8,6 +9,9 @@ import os
 def seed():
     app = create_app()
     with app.app_context():
+        db.create_all()
+        TemplateSeeder.seed_builtin_templates()
+
         if Album.query.count() == 0:
             print("🌱 正在进行初始数据填充...")
 
@@ -20,11 +24,16 @@ def seed():
             )
             db.session.add(public_album)
 
+            travel_template = Template.query.filter_by(slug='travel').first()
             travel_album = Album(
                 title="旅行记忆",
                 description="记录旅途中的美好瞬间",
-                is_admin_only=False
+                is_admin_only=False,
+                template_id=travel_template.id if travel_template else None
             )
+            if travel_template:
+                travel_album.set_layout_config(travel_template.get_layout_params())
+                travel_album.set_tags_list(travel_template.get_suggested_tags())
             db.session.add(travel_album)
 
             daily_album = Album(
@@ -67,12 +76,18 @@ def seed():
                         with open(filepath, 'wb') as f:
                             f.write(b'\x89PNG\r\n\x1a\n')
 
+                    width = random.choice([800, 1024, 1200, 1600])
+                    height_options = [int(width * 0.75), int(width * 1.0), int(width * 0.5625), int(width * 1.33)]
+                    height = random.choice(height_options)
+
                     photo = Photo(
                         filename=filename,
                         original_filename=original_filename,
                         album_id=album.id,
                         uploaded_at=uploaded_at,
-                        exif_taken_at=exif_taken_at
+                        exif_taken_at=exif_taken_at,
+                        width=width,
+                        height=height
                     )
                     db.session.add(photo)
                     photo_count += 1

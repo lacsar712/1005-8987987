@@ -1,36 +1,256 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<div class="max-w-2xl mx-auto">
+<div class="max-w-6xl mx-auto">
     <div class="mb-8">
         <a href="{{ url_for('index') }}" class="text-gray-500 hover:text-gray-700 text-sm flex items-center mb-4">
             <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
             返回首页
         </a>
         <h1 class="text-3xl font-bold text-gray-900">新建相册</h1>
+        <p class="text-gray-500 mt-2">选择一个模板快速开始，或从空白创建</p>
     </div>
-    
-    <div class="bg-white rounded-xl shadow-sm p-8 border border-gray-100">
-        <form method="POST" onsubmit="return handleFormSubmit(this)">
-            <div class="mb-6">
-                <label for="title" class="block text-sm font-medium text-gray-700 mb-1">相册名称 <span class="text-red-500">*</span></label>
-                <input type="text" name="title" id="title" required placeholder="例如：2026年春节"
-                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none transition">
+
+    <form method="POST" onsubmit="return handleFormSubmit(this)">
+        <div class="space-y-8">
+            <div>
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-lg font-semibold text-gray-800">第一步：选择模板</h2>
+                    <button type="button" onclick="skipTemplate()" class="text-sm text-gray-500 hover:text-primary transition">
+                        跳过模板，创建空白相册 →
+                    </button>
+                </div>
+
+                <div id="template-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                    {% for tpl in templates %}
+                    <div class="template-card cursor-pointer group" data-template-id="{{ tpl.id }}" onclick="selectTemplate({{ tpl.id }}, this)">
+                        <div class="bg-white rounded-xl shadow-sm hover:shadow-md transition duration-300 overflow-hidden border-2 border-transparent group-hover:border-primary/40 relative">
+                            <div class="aspect-[4/3] bg-gray-50 overflow-hidden relative">
+                                {% if tpl.cover_placeholder %}
+                                <div class="w-full h-full flex items-center justify-center p-2">
+                                    {{ tpl.cover_placeholder|safe }}
+                                </div>
+                                {% else %}
+                                <div class="flex items-center justify-center w-full h-full text-gray-300">
+                                    <svg class="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                                </div>
+                                {% endif %}
+                                <div id="checkmark-{{ tpl.id }}" class="absolute top-2 right-2 hidden">
+                                    <div class="bg-primary text-white rounded-full p-1 shadow-lg">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path></svg>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="p-3">
+                                <div class="flex items-center justify-between mb-1">
+                                    <h3 class="font-semibold text-gray-800">{{ tpl.name }}</h3>
+                                    {% if tpl.is_builtin %}
+                                    <span class="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded">内置</span>
+                                    {% endif %}
+                                </div>
+                                <p class="text-xs text-gray-500 line-clamp-2">{{ tpl.description }}</p>
+                                <div class="mt-2 flex flex-wrap gap-1">
+                                    {% set params = tpl.get_layout_params() %}
+                                    {% if params.get('layout_mode') %}
+                                    <span class="text-[10px] px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded">
+                                        {{ '瀑布流' if params.layout_mode == 'masonry' else '网格' }}
+                                    </span>
+                                    {% endif %}
+                                    {% if params.get('columns') %}
+                                    <span class="text-[10px] px-1.5 py-0.5 bg-green-50 text-green-600 rounded">
+                                        {{ params.columns }} 列
+                                    </span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
             </div>
-            
-            <div class="mb-8">
-                <label for="description" class="block text-sm font-medium text-gray-700 mb-1">描述 (可选)</label>
-                <textarea name="description" id="description" rows="4" placeholder="记录美好时刻..."
-                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none transition resize-none"></textarea>
+
+            <div id="template-detail-panel" class="hidden bg-white rounded-xl shadow-sm p-6 border border-gray-100">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4">模板信息</h3>
+                <div id="template-detail-content" class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                </div>
             </div>
-            
-            <div class="flex justify-end space-x-4">
-                <a href="{{ url_for('index') }}" class="px-6 py-2.5 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition">取消</a>
-                <button type="submit" class="px-6 py-2.5 bg-primary hover:bg-blue-600 text-white rounded-lg shadow-sm transition">
-                    创建相册
-                </button>
+
+            <div class="bg-white rounded-xl shadow-sm p-8 border border-gray-100">
+                <h2 class="text-lg font-semibold text-gray-800 mb-6">第二步：填写相册信息</h2>
+
+                <input type="hidden" name="template_id" id="template_id" value="">
+
+                <div class="mb-6">
+                    <label for="title" class="block text-sm font-medium text-gray-700 mb-1">相册名称 <span class="text-red-500">*</span></label>
+                    <input type="text" name="title" id="title" required placeholder="例如：2026年春节"
+                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none transition">
+                </div>
+
+                <div class="mb-8">
+                    <label for="description" class="block text-sm font-medium text-gray-700 mb-1">描述 (可选)</label>
+                    <textarea name="description" id="description" rows="4" placeholder="记录美好时刻..."
+                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none transition resize-none"></textarea>
+                    <div id="prefill-hint" class="hidden mt-2 text-xs text-primary">
+                        <svg class="w-3 h-3 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        已根据模板预填描述文案，您可以自由修改
+                    </div>
+                </div>
+
+                <div id="suggested-tags-panel" class="mb-8 hidden">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">建议标签</label>
+                    <div id="suggested-tags" class="flex flex-wrap gap-2">
+                    </div>
+                </div>
+
+                <div class="flex justify-end space-x-4">
+                    <a href="{{ url_for('index') }}" class="px-6 py-2.5 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition">取消</a>
+                    <button type="submit" class="px-6 py-2.5 bg-primary hover:bg-blue-600 text-white rounded-lg shadow-sm transition flex items-center">
+                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                        创建相册
+                    </button>
+                </div>
             </div>
-        </form>
-    </div>
+        </div>
+    </form>
 </div>
+
+<script>
+    const templates = {
+        {% for tpl in templates %}
+        {{ tpl.id }}: {
+            id: {{ tpl.id }},
+            name: {{ tpl.name|tojson }},
+            description: {{ tpl.description|tojson }},
+            scene_description: {{ tpl.scene_description|tojson }},
+            prefill_description: {{ tpl.prefill_description|tojson }},
+            suggested_tags: {{ tpl.get_suggested_tags()|tojson }},
+            layout_params: {{ tpl.get_layout_params()|tojson }},
+            placeholder_count: {{ tpl.get_placeholder_svgs()|length }},
+        },
+        {% endfor %}
+    };
+
+    let selectedTemplateId = null;
+
+    function selectTemplate(id, cardEl) {
+        document.querySelectorAll('.template-card > div').forEach(el => {
+            el.classList.remove('border-primary');
+            el.classList.add('border-transparent');
+        });
+        document.querySelectorAll('[id^="checkmark-"]').forEach(el => {
+            el.classList.add('hidden');
+        });
+
+        if (selectedTemplateId === id) {
+            selectedTemplateId = null;
+            document.getElementById('template_id').value = '';
+            document.getElementById('template-detail-panel').classList.add('hidden');
+            document.getElementById('suggested-tags-panel').classList.add('hidden');
+            document.getElementById('prefill-hint').classList.add('hidden');
+        } else {
+            selectedTemplateId = id;
+            document.getElementById('template_id').value = id;
+            cardEl.querySelector('div').classList.remove('border-transparent');
+            cardEl.querySelector('div').classList.add('border-primary');
+            document.getElementById('checkmark-' + id).classList.remove('hidden');
+            showTemplateDetail(id);
+        }
+    }
+
+    function showTemplateDetail(id) {
+        const tpl = templates[id];
+        if (!tpl) return;
+
+        const panel = document.getElementById('template-detail-panel');
+        const content = document.getElementById('template-detail-content');
+
+        const params = tpl.layout_params || {};
+        const layoutModeText = params.layout_mode === 'masonry' ? '瀑布流' : (params.layout_mode === 'grid' ? '网格' : '默认');
+        const sortRuleMap = {
+            'created_desc': '按创建时间倒序',
+            'created_asc': '按创建时间正序',
+            'custom': '自定义排序'
+        };
+        const sortText = sortRuleMap[params.sort_rule] || '默认排序';
+
+        content.innerHTML = `
+            <div>
+                <h4 class="font-medium text-gray-700 mb-2">适用场景</h4>
+                <p class="text-sm text-gray-600">${tpl.scene_description || '暂无说明'}</p>
+
+                <h4 class="font-medium text-gray-700 mt-4 mb-2">预填描述</h4>
+                <p class="text-sm text-gray-600 whitespace-pre-wrap">${tpl.prefill_description || '（无）'}</p>
+
+                <h4 class="font-medium text-gray-700 mt-4 mb-2">建议标签</h4>
+                <div class="flex flex-wrap gap-1.5">
+                    ${tpl.suggested_tags && tpl.suggested_tags.length ? tpl.suggested_tags.map(t =>
+                        `<span class="text-xs px-2 py-1 bg-gray-100 text-gray-600 rounded-full">#${t}</span>`
+                    ).join('') : '<span class="text-sm text-gray-400">无</span>'}
+                </div>
+            </div>
+            <div>
+                <h4 class="font-medium text-gray-700 mb-2">布局参数</h4>
+                <div class="bg-gray-50 rounded-lg p-4 space-y-2 text-sm">
+                    <div class="flex justify-between">
+                        <span class="text-gray-500">布局模式</span>
+                        <span class="text-gray-800 font-medium">${layoutModeText}</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-500">列数</span>
+                        <span class="text-gray-800 font-medium">${params.columns || '默认'} 列</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-500">网格间距</span>
+                        <span class="text-gray-800 font-medium">${params.gap || 12}px</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-500">圆角大小</span>
+                        <span class="text-gray-800 font-medium">${params.border_radius || 8}px</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-500">排序规则</span>
+                        <span class="text-gray-800 font-medium">${sortText}</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-500">占位图数量</span>
+                        <span class="text-gray-800 font-medium">${tpl.placeholder_count} 张</span>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        panel.classList.remove('hidden');
+
+        if (tpl.prefill_description && !document.getElementById('description').value) {
+            document.getElementById('description').value = tpl.prefill_description;
+            document.getElementById('prefill-hint').classList.remove('hidden');
+        }
+
+        if (tpl.suggested_tags && tpl.suggested_tags.length) {
+            const tagsPanel = document.getElementById('suggested-tags');
+            tagsPanel.innerHTML = tpl.suggested_tags.map(t =>
+                `<span class="text-xs px-3 py-1.5 bg-blue-50 text-blue-600 rounded-full cursor-pointer hover:bg-blue-100 transition">#${t}</span>`
+            ).join('');
+            document.getElementById('suggested-tags-panel').classList.remove('hidden');
+        } else {
+            document.getElementById('suggested-tags-panel').classList.add('hidden');
+        }
+    }
+
+    function skipTemplate() {
+        selectedTemplateId = null;
+        document.getElementById('template_id').value = '';
+        document.querySelectorAll('.template-card > div').forEach(el => {
+            el.classList.remove('border-primary');
+            el.classList.add('border-transparent');
+        });
+        document.querySelectorAll('[id^="checkmark-"]').forEach(el => {
+            el.classList.add('hidden');
+        });
+        document.getElementById('template-detail-panel').classList.add('hidden');
+        document.getElementById('suggested-tags-panel').classList.add('hidden');
+        document.getElementById('prefill-hint').classList.add('hidden');
+        document.getElementById('title').focus();
+    }
+</script>
 {% endblock %}

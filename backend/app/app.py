@@ -3,8 +3,13 @@ import uuid
 from flask import Flask, render_template, request, redirect, url_for, flash, abort, send_from_directory, jsonify
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from werkzeug.utils import secure_filename
-from .db import db, Album, Photo, Highlight, CurationConfig
-from .services import TimelineService, OnThisDayService, PhotoDateGrouper
+from PIL import Image
+from .db import db, Album, Photo, Highlight, CurationConfig, Template, PhotoPlaceholder
+from .services import (
+    TimelineService, OnThisDayService, PhotoDateGrouper,
+    TemplateSeeder, TemplateService, TemplateApplier, PlaceholderService
+)
+from .routes import templates_bp
 from datetime import datetime, timedelta
 
 UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static/uploads')
@@ -37,7 +42,8 @@ def create_app():
     app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024
 
     db.init_app(app)
-    
+    app.register_blueprint(templates_bp)
+
     login_manager = LoginManager()
     login_manager.login_view = 'login'
     login_manager.init_app(app)
@@ -52,6 +58,7 @@ def create_app():
 
     with app.app_context():
         db.create_all()
+        TemplateSeeder.seed_builtin_templates()
         if Album.query.count() == 0:
             default_album = Album(title="我的首个相册", description="欢迎使用在线相册系统")
             db.session.add(default_album)
@@ -69,7 +76,11 @@ def create_app():
         highlighted_ids = set()
         if current_user.is_authenticated:
             highlighted_ids = set(h.photo_id for h in Highlight.query.all())
-        return render_template('album.html', album=album, highlighted_ids=highlighted_ids)
+        placeholders = PhotoPlaceholder.query.filter_by(album_id=album.id).order_by(PhotoPlaceholder.slot_index.asc()).all()
+        layout_config = album.get_layout_config()
+        tags = album.get_tags_list()
+        return render_template('album.html', album=album, highlighted_ids=highlighted_ids,
+                          placeholders=placeholders, layout_config=layout_config, tags=tags)
 
     @app.route('/highlights')
     def highlights():
@@ -112,15 +123,25 @@ def create_app():
         if request.method == 'POST':
             title = request.form.get('title')
             description = request.form.get('description')
+            template_id = request.form.get('template_id', type=int)
             if not title:
                 flash('相册名称不能为空', 'error')
             else:
-                new_album = Album(title=title, description=description)
+                new_album = Album(title=title, description=description or '')
                 db.session.add(new_album)
-                db.session.commit()
+                db.session.flush()
+
+                if template_id:
+                    template = TemplateService.get_by_id(template_id)
+                    if template:
+                        TemplateApplier.apply_template_to_album(new_album, template)
+                else:
+                    db.session.commit()
+
                 flash('相册创建成功', 'success')
                 return redirect(url_for('index'))
-        return render_template('create_album.html')
+        templates = TemplateService.get_all(active_only=True)
+        return render_template('create_album.html', templates=templates)
 
     @app.route('/album/delete/<int:album_id>')
     @login_required
@@ -147,6 +168,9 @@ def create_app():
             
             files = request.files.getlist('photo')
             uploaded_count = 0
+            matched_placeholders = []
+
+            placeholders = PhotoPlaceholder.query.filter_by(album_id=album.id).all()
 
             for file in files:
                 if file.filename == '':
@@ -163,21 +187,55 @@ def create_app():
                         continue
 
                     unique_filename = f"{uuid.uuid4().hex}.{extension}"
-                    
-                    file.save(os.path.join(app.config['UPLOAD_FOLDER'], unique_filename))
-                    
-                    new_photo = Photo(filename=unique_filename, original_filename=original_filename, album_id=album.id)
+                    save_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
+                    file.save(save_path)
+
+                    width, height = None, None
+                    try:
+                        with Image.open(save_path) as img:
+                            width, height = img.size
+                    except Exception:
+                        pass
+
+                    photo_aspect_ratio = None
+                    if width and height and height > 0:
+                        photo_aspect_ratio = round(width / height, 2)
+
+                    new_photo = Photo(
+                        filename=unique_filename,
+                        original_filename=original_filename,
+                        album_id=album.id,
+                        width=width,
+                        height=height,
+                    )
+
+                    matched = PlaceholderService.find_best_matching_placeholder(placeholders, photo_aspect_ratio)
+                    if matched:
+                        new_photo.replaced_placeholder_id = matched.id
+                        matched.is_replaced = True
+                        matched_placeholders.append({
+                            'photo_filename': original_filename,
+                            'slot_index': matched.slot_index,
+                            'placeholder_ratio': matched.aspect_ratio,
+                            'photo_ratio': photo_aspect_ratio,
+                        })
+                        placeholders = [p for p in placeholders if p.id != matched.id]
+
                     db.session.add(new_photo)
                     uploaded_count += 1
             
             if uploaded_count > 0:
                 db.session.commit()
-                flash(f'成功上传 {uploaded_count} 张图片', 'success')
+                msg = f'成功上传 {uploaded_count} 张图片'
+                if matched_placeholders:
+                    msg += f'，其中 {len(matched_placeholders)} 张已自动匹配占位槽位'
+                flash(msg, 'success')
                 return redirect(url_for('album_detail', album_id=album.id))
             else:
                 flash('未选择有效文件或格式不支持', 'error')
 
-        return render_template('upload.html', album=album)
+        placeholders = PhotoPlaceholder.query.filter_by(album_id=album.id).order_by(PhotoPlaceholder.slot_index.asc()).all()
+        return render_template('upload.html', album=album, placeholders=placeholders)
 
     @app.route('/photo/delete/<int:photo_id>')
     @login_required

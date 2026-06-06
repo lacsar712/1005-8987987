@@ -1,0 +1,447 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="mb-8">
+    <a href="{{ url_for('index') }}" class="text-gray-500 hover:text-gray-700 text-sm flex items-center mb-4">
+        <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+        返回首页
+    </a>
+    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+            <h1 class="text-3xl font-bold text-gray-900">模板管理</h1>
+            <p class="text-gray-500 mt-1">管理相册模板，创建自定义模板或组合多个模板</p>
+        </div>
+        <div class="flex gap-3">
+            <button onclick="openCombineModal()" class="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg shadow transition flex items-center">
+                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path></svg>
+                组合模板
+            </button>
+            <button onclick="openCreateModal()" class="px-4 py-2 bg-primary hover:bg-blue-600 text-white rounded-lg shadow transition flex items-center">
+                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                新建模板
+            </button>
+        </div>
+    </div>
+</div>
+
+<div id="templates-container" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+    {% for tpl in templates %}
+    <div class="bg-white rounded-xl shadow-sm hover:shadow-md transition duration-300 overflow-hidden border border-gray-100">
+        <div class="aspect-[4/3] bg-gray-50 overflow-hidden relative">
+            {% if tpl.cover_placeholder %}
+            <div class="w-full h-full flex items-center justify-center p-2">
+                {{ tpl.cover_placeholder|safe }}
+            </div>
+            {% else %}
+            <div class="flex items-center justify-center w-full h-full text-gray-300">
+                <svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+            </div>
+            {% endif %}
+            <div class="absolute top-2 left-2 flex gap-1.5">
+                {% if tpl.is_builtin %}
+                <span class="text-xs px-2 py-1 bg-blue-500 text-white rounded shadow">内置</span>
+                {% else %}
+                <span class="text-xs px-2 py-1 bg-gray-500 text-white rounded shadow">自定义</span>
+                {% endif %}
+                {% if not tpl.is_active %}
+                <span class="text-xs px-2 py-1 bg-red-500 text-white rounded shadow">已停用</span>
+                {% endif %}
+            </div>
+        </div>
+        <div class="p-4">
+            <h3 class="text-lg font-semibold text-gray-900 mb-1">{{ tpl.name }}</h3>
+            <p class="text-sm text-gray-500 line-clamp-2 mb-3">{{ tpl.description }}</p>
+
+            {% set params = tpl.get_layout_params() %}
+            <div class="bg-gray-50 rounded-lg p-3 mb-3">
+                <h4 class="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">布局参数</h4>
+                <div class="grid grid-cols-2 gap-2 text-xs">
+                    <div class="flex justify-between">
+                        <span class="text-gray-500">模式</span>
+                        <span class="text-gray-800 font-medium">{{ '瀑布流' if params.get('layout_mode') == 'masonry' else '网格' }}</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-500">列数</span>
+                        <span class="text-gray-800 font-medium">{{ params.get('columns', '-') }}</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-500">间距</span>
+                        <span class="text-gray-800 font-medium">{{ params.get('gap', '-') }}px</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-500">圆角</span>
+                        <span class="text-gray-800 font-medium">{{ params.get('border_radius', '-') }}px</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <h4 class="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1.5">适用场景</h4>
+                <p class="text-xs text-gray-600 line-clamp-2">{{ tpl.scene_description or '暂无说明' }}</p>
+            </div>
+
+            {% set tpl_tags = tpl.get_suggested_tags() %}
+            {% if tpl_tags %}
+            <div class="mb-3">
+                <h4 class="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1.5">建议标签</h4>
+                <div class="flex flex-wrap gap-1">
+                    {% for tag in tpl_tags[:4] %}
+                    <span class="text-[10px] px-2 py-0.5 bg-blue-50 text-blue-600 rounded-full">#{{ tag }}</span>
+                    {% endfor %}
+                    {% if tpl_tags|length > 4 %}
+                    <span class="text-[10px] px-2 py-0.5 bg-gray-100 text-gray-500 rounded-full">+{{ tpl_tags|length - 4 }}</span>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
+
+            <div class="pt-3 border-t border-gray-100 flex gap-2">
+                <button onclick="openEditModal({{ tpl.id }})" class="flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition">
+                    编辑
+                </button>
+                {% if not tpl.is_builtin %}
+                <button onclick="deleteTemplate({{ tpl.id }})" class="px-3 py-1.5 text-sm border border-red-200 rounded-lg text-red-600 hover:bg-red-50 transition">
+                    删除
+                </button>
+                {% else %}
+                <button onclick="toggleActive({{ tpl.id }}, {{ 'false' if tpl.is_active else 'true' }})" class="px-3 py-1.5 text-sm border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition">
+                    {{ '停用' if tpl.is_active else '启用' }}
+                </button>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<div id="create-modal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <div class="p-6 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white">
+            <h2 id="modal-title" class="text-xl font-bold text-gray-900">新建模板</h2>
+            <button onclick="closeModal()" class="text-gray-400 hover:text-gray-600">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+        </div>
+        <div class="p-6 space-y-5">
+            <input type="hidden" id="edit-template-id" value="">
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">模板名称 <span class="text-red-500">*</span></label>
+                <input type="text" id="tpl-name" placeholder="例如：婚礼相册" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none transition">
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">模板标识 (slug) <span class="text-red-500">*</span></label>
+                <input type="text" id="tpl-slug" placeholder="例如：wedding" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none transition">
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">简短描述</label>
+                <input type="text" id="tpl-description" placeholder="一句话描述模板用途" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none transition">
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">适用场景说明</label>
+                <textarea id="tpl-scene" rows="2" placeholder="详细说明适用的场景和主题" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none transition resize-none"></textarea>
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">预填描述文案</label>
+                <textarea id="tpl-prefill" rows="3" placeholder="创建相册时自动填充的描述文字" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none transition resize-none"></textarea>
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">建议标签（逗号分隔）</label>
+                <input type="text" id="tpl-tags" placeholder="例如：婚礼, 爱情, 纪念" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none transition">
+            </div>
+
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">布局模式</label>
+                    <select id="tpl-layout-mode" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none transition">
+                        <option value="masonry">瀑布流</option>
+                        <option value="grid">网格</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">列数</label>
+                    <input type="number" id="tpl-columns" value="3" min="1" max="6" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none transition">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">间距 (px)</label>
+                    <input type="number" id="tpl-gap" value="12" min="0" max="48" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none transition">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">圆角 (px)</label>
+                    <input type="number" id="tpl-radius" value="8" min="0" max="32" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none transition">
+                </div>
+            </div>
+        </div>
+        <div class="p-6 border-t border-gray-100 flex justify-end gap-3 sticky bottom-0 bg-white">
+            <button onclick="closeModal()" class="px-5 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition">取消</button>
+            <button onclick="saveTemplate()" class="px-5 py-2 bg-primary hover:bg-blue-600 text-white rounded-lg shadow transition">保存</button>
+        </div>
+    </div>
+</div>
+
+<div id="combine-modal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <div class="p-6 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white">
+            <h2 class="text-xl font-bold text-gray-900">组合模板</h2>
+            <button onclick="closeCombineModal()" class="text-gray-400 hover:text-gray-600">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+        </div>
+        <div class="p-6 space-y-5">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">新相册名称 <span class="text-red-500">*</span></label>
+                <input type="text" id="combine-title" placeholder="例如：旅行与美食合集" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none transition">
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">选择要组合的模板（至少 2 个）</label>
+                <div id="combine-template-list" class="grid grid-cols-2 sm:grid-cols-3 gap-3 max-h-80 overflow-y-auto pr-1">
+                    {% for tpl in templates %}
+                    {% if tpl.is_active %}
+                    <label class="cursor-pointer group">
+                        <input type="checkbox" value="{{ tpl.id }}" class="combine-checkbox sr-only peer">
+                        <div class="p-3 border-2 border-gray-200 rounded-xl peer-checked:border-primary peer-checked:bg-blue-50 transition group-hover:border-gray-300">
+                            <div class="aspect-[4/3] bg-gray-50 rounded-lg overflow-hidden mb-2">
+                                {% if tpl.cover_placeholder %}
+                                <div class="w-full h-full flex items-center justify-center p-1 scale-75 origin-center">
+                                    {{ tpl.cover_placeholder|safe }}
+                                </div>
+                                {% else %}
+                                <div class="flex items-center justify-center w-full h-full text-gray-300">
+                                    <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01"></path></svg>
+                                </div>
+                                {% endif %}
+                            </div>
+                            <p class="text-sm font-medium text-gray-800 text-center">{{ tpl.name }}</p>
+                        </div>
+                    </label>
+                    {% endif %}
+                    {% endfor %}
+                </div>
+            </div>
+
+            <div class="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm text-amber-800">
+                <p class="flex items-start">
+                    <svg class="w-5 h-5 mr-2 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    组合模板会合并所选模板的描述文案（拼接）、建议标签（去重合并）、占位图（叠加，最多 9 张）和布局参数（优先使用第一个模板的设置）。
+                </p>
+            </div>
+        </div>
+        <div class="p-6 border-t border-gray-100 flex justify-end gap-3 sticky bottom-0 bg-white">
+            <button onclick="closeCombineModal()" class="px-5 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition">取消</button>
+            <button onclick="doCombine()" class="px-5 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg shadow transition">创建组合相册</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    const templatesData = {};
+    {% for tpl in templates %}
+    templatesData[{{ tpl.id }}] = {
+        id: {{ tpl.id }},
+        name: {{ tpl.name|tojson }},
+        slug: {{ tpl.slug|tojson }},
+        description: {{ tpl.description|tojson }},
+        scene_description: {{ tpl.scene_description|tojson }},
+        prefill_description: {{ tpl.prefill_description|tojson }},
+        suggested_tags: {{ tpl.get_suggested_tags()|tojson }},
+        layout_params: {{ tpl.get_layout_params()|tojson }},
+        is_builtin: {{ 'true' if tpl.is_builtin else 'false' }},
+        is_active: {{ 'true' if tpl.is_active else 'false' }},
+    };
+    {% endfor %}
+
+    function openCreateModal() {
+        document.getElementById('modal-title').textContent = '新建模板';
+        document.getElementById('edit-template-id').value = '';
+        document.getElementById('tpl-name').value = '';
+        document.getElementById('tpl-slug').value = '';
+        document.getElementById('tpl-description').value = '';
+        document.getElementById('tpl-scene').value = '';
+        document.getElementById('tpl-prefill').value = '';
+        document.getElementById('tpl-tags').value = '';
+        document.getElementById('tpl-layout-mode').value = 'masonry';
+        document.getElementById('tpl-columns').value = '3';
+        document.getElementById('tpl-gap').value = '12';
+        document.getElementById('tpl-radius').value = '8';
+        document.getElementById('create-modal').classList.remove('hidden');
+    }
+
+    function openEditModal(id) {
+        const tpl = templatesData[id];
+        if (!tpl) return;
+        document.getElementById('modal-title').textContent = '编辑模板';
+        document.getElementById('edit-template-id').value = id;
+        document.getElementById('tpl-name').value = tpl.name;
+        document.getElementById('tpl-slug').value = tpl.slug;
+        document.getElementById('tpl-description').value = tpl.description || '';
+        document.getElementById('tpl-scene').value = tpl.scene_description || '';
+        document.getElementById('tpl-prefill').value = tpl.prefill_description || '';
+        document.getElementById('tpl-tags').value = (tpl.suggested_tags || []).join(', ');
+        const params = tpl.layout_params || {};
+        document.getElementById('tpl-layout-mode').value = params.layout_mode || 'masonry';
+        document.getElementById('tpl-columns').value = params.columns || 3;
+        document.getElementById('tpl-gap').value = params.gap || 12;
+        document.getElementById('tpl-radius').value = params.border_radius || 8;
+        document.getElementById('create-modal').classList.remove('hidden');
+    }
+
+    function closeModal() {
+        document.getElementById('create-modal').classList.add('hidden');
+    }
+
+    function showToast(message, type = 'success') {
+        const Toast = Swal.mixin({
+            toast: true,
+            position: 'top',
+            showConfirmButton: false,
+            timer: 3000,
+            timerProgressBar: true
+        });
+        Toast.fire({ icon: type, title: message });
+    }
+
+    function collectTemplateFormData() {
+        const tagsStr = document.getElementById('tpl-tags').value || '';
+        const tags = tagsStr.split(',').map(t => t.trim()).filter(t => t);
+        return {
+            name: document.getElementById('tpl-name').value.trim(),
+            slug: document.getElementById('tpl-slug').value.trim(),
+            description: document.getElementById('tpl-description').value.trim(),
+            scene_description: document.getElementById('tpl-scene').value.trim(),
+            prefill_description: document.getElementById('tpl-prefill').value.trim(),
+            suggested_tags: tags,
+            layout_params: {
+                layout_mode: document.getElementById('tpl-layout-mode').value,
+                columns: parseInt(document.getElementById('tpl-columns').value) || 3,
+                gap: parseInt(document.getElementById('tpl-gap').value) || 12,
+                sort_rule: 'created_desc',
+                border_radius: parseInt(document.getElementById('tpl-radius').value) || 8,
+            },
+            is_active: true,
+        };
+    }
+
+    function saveTemplate() {
+        const editId = document.getElementById('edit-template-id').value;
+        const data = collectTemplateFormData();
+        if (!data.name || !data.slug) {
+            showToast('请填写模板名称和标识', 'error');
+            return;
+        }
+
+        const url = editId ? `/api/templates/${editId}` : '/api/templates';
+        const method = editId ? 'PUT' : 'POST';
+
+        fetch(url, {
+            method: method,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data),
+        })
+        .then(r => r.json())
+        .then(result => {
+            if (result.success) {
+                showToast(editId ? '模板已更新' : '模板已创建');
+                closeModal();
+                setTimeout(() => location.reload(), 600);
+            } else {
+                showToast(result.message || '保存失败', 'error');
+            }
+        })
+        .catch(() => showToast('网络错误', 'error'));
+    }
+
+    function deleteTemplate(id) {
+        Swal.fire({
+            title: '确定删除模板？',
+            text: '删除后无法恢复，已使用该模板创建的相册不会受影响。',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#ef4444',
+            cancelButtonColor: '#6b7280',
+            confirmButtonText: '确定删除',
+            cancelButtonText: '取消',
+        }).then((result) => {
+            if (result.isConfirmed) {
+                fetch(`/api/templates/${id}`, { method: 'DELETE' })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.success) {
+                            showToast('模板已删除');
+                            setTimeout(() => location.reload(), 600);
+                        } else {
+                            showToast(data.message || '删除失败', 'error');
+                        }
+                    })
+                    .catch(() => showToast('网络错误', 'error'));
+            }
+        });
+    }
+
+    function toggleActive(id, active) {
+        fetch(`/api/templates/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ is_active: active }),
+        })
+        .then(r => r.json())
+        .then(result => {
+            if (result.success) {
+                showToast(active ? '模板已启用' : '模板已停用');
+                setTimeout(() => location.reload(), 600);
+            } else {
+                showToast(result.message || '操作失败', 'error');
+            }
+        })
+        .catch(() => showToast('网络错误', 'error'));
+    }
+
+    function openCombineModal() {
+        document.querySelectorAll('.combine-checkbox').forEach(cb => cb.checked = false);
+        document.getElementById('combine-title').value = '';
+        document.getElementById('combine-modal').classList.remove('hidden');
+    }
+
+    function closeCombineModal() {
+        document.getElementById('combine-modal').classList.add('hidden');
+    }
+
+    function doCombine() {
+        const title = document.getElementById('combine-title').value.trim();
+        const ids = Array.from(document.querySelectorAll('.combine-checkbox:checked')).map(cb => parseInt(cb.value));
+
+        if (!title) {
+            showToast('请输入新相册名称', 'error');
+            return;
+        }
+        if (ids.length < 2) {
+            showToast('请至少选择两个模板', 'error');
+            return;
+        }
+
+        fetch('/api/templates/combine', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title: title, template_ids: ids }),
+        })
+        .then(r => r.json())
+        .then(result => {
+            if (result.success) {
+                showToast('组合相册创建成功');
+                closeCombineModal();
+                setTimeout(() => {
+                    window.location.href = `/album/${result.album_id}`;
+                }, 600);
+            } else {
+                showToast(result.message || '创建失败', 'error');
+            }
+        })
+        .catch(() => showToast('网络错误', 'error'));
+    }
+</script>
+{% endblock %}

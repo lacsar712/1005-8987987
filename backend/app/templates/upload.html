@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<div class="max-w-2xl mx-auto">
+<div class="max-w-3xl mx-auto">
     <div class="mb-8">
         <a href="{{ url_for('album_detail', album_id=album.id) }}" class="text-gray-500 hover:text-gray-700 text-sm flex items-center mb-4">
             <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
@@ -11,10 +11,34 @@
         <p class="text-gray-500 mt-1">上传到相册: {{ album.title }}</p>
     </div>
 
+    {% if placeholders %}
+        {% set available = placeholders|selectattr('is_replaced', 'equalto', false)|list %}
+        {% if available %}
+        <div class="bg-blue-50 border border-blue-200 rounded-xl p-5 mb-6">
+            <div class="flex items-start">
+                <svg class="w-5 h-5 text-blue-500 mt-0.5 mr-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                <div>
+                    <h3 class="font-semibold text-blue-800 mb-1">智能占位匹配</h3>
+                    <p class="text-sm text-blue-700 mb-3">
+                        本相册有 {{ available|length }} 个占位槽位，上传时系统会根据照片宽高比自动匹配最合适的槽位进行替换。
+                    </p>
+                    <div class="grid grid-cols-3 gap-3">
+                        {% for ph in available %}
+                        <div class="bg-white rounded-lg border border-blue-200 p-2">
+                            <div class="text-[10px] text-blue-600 font-medium mb-1">槽位 #{{ ph.slot_index + 1 }}</div>
+                            <div class="text-xs text-gray-700">比例: <span class="font-mono">{{ ph.aspect_ratio }}</span></div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    {% endif %}
+
     <div class="bg-white rounded-xl shadow-sm p-8 border border-gray-100">
         <form method="POST" enctype="multipart/form-data" class="space-y-6" onsubmit="return handleFormSubmit(this)">
-            
-            <!-- Custom File Input with Drag & Drop styling -->
+
             <div class="w-full">
                 <label class="block text-sm font-medium text-gray-700 mb-2">选择图片</label>
                 <div class="flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-lg hover:border-primary hover:bg-blue-50 transition-colors cursor-pointer relative">
@@ -68,7 +92,6 @@
     const dropZone = document.querySelector('.border-dashed');
     const fileInput = document.getElementById('photo');
 
-    // 处理拖拽视觉效果
     ['dragenter', 'dragover'].forEach(eventName => {
         dropZone.addEventListener(eventName, (e) => {
             e.preventDefault();
@@ -83,7 +106,6 @@
         }, false);
     });
 
-    // 处理文件拖入
     dropZone.addEventListener('drop', (e) => {
         const dt = e.dataTransfer;
         const files = dt.files;
@@ -94,7 +116,7 @@
     function updateFileList(input) {
         const fileList = document.getElementById('file-list');
         fileList.innerHTML = '';
-        
+
         if (input.files && input.files.length > 0) {
             const count = input.files.length;
             const title = document.createElement('p');
