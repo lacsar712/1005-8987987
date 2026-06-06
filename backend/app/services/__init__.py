@@ -10,3 +10,4 @@ from .watermark_processor import (
 from .watermark_service import WatermarkConfigService, AlbumWatermarkService
 from .watermark_batch_task import WatermarkBatchProcessor
 from .rename_service import RenameRuleEngine, RenameHistoryService
+from .photo_edit_service import PhotoEditService

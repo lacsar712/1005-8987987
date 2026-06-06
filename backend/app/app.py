@@ -11,7 +11,7 @@ from .services import (
     WatermarkConfigService, AlbumWatermarkService, WatermarkProcessor,
     RenameRuleEngine, RenameHistoryService
 )
-from .routes import templates_bp, watermark_bp, rename_bp
+from .routes import templates_bp, watermark_bp, rename_bp, photo_edit_bp
 from datetime import datetime, timedelta
 
 UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static/uploads')
@@ -47,6 +47,7 @@ def create_app():
     app.register_blueprint(templates_bp)
     app.register_blueprint(watermark_bp)
     app.register_blueprint(rename_bp)
+    app.register_blueprint(photo_edit_bp)
 
     login_manager = LoginManager()
     login_manager.login_view = 'login'

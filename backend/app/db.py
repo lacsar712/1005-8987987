@@ -291,3 +291,37 @@ class RenameHistory(db.Model):
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'rolled_back_at': self.rolled_back_at.isoformat() if self.rolled_back_at else None,
         }
+
+
+class PhotoEditVersion(db.Model):
+    """照片编辑版本记录（用于非破坏性编辑历史）"""
+    id = db.Column(db.Integer, primary_key=True)
+    photo_id = db.Column(db.Integer, db.ForeignKey('photo.id'), nullable=False)
+    version_number = db.Column(db.Integer, default=1)
+    label = db.Column(db.String(200), default='')
+    operations_json = db.Column(db.Text, nullable=False)
+    thumbnail_data = db.Column(db.Text, default='')
+    is_applied = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    photo = db.relationship('Photo', backref=db.backref('edit_versions', lazy=True, cascade="all, delete-orphan"))
+
+    def get_operations(self):
+        try:
+            return json.loads(self.operations_json or '[]')
+        except (json.JSONDecodeError, TypeError):
+            return []
+
+    def set_operations(self, ops):
+        self.operations_json = json.dumps(ops, ensure_ascii=False)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'photo_id': self.photo_id,
+            'version_number': self.version_number,
+            'label': self.label,
+            'operations': self.get_operations(),
+            'thumbnail': self.thumbnail_data or None,
+            'is_applied': self.is_applied,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+        }
