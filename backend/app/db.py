@@ -48,6 +48,7 @@ class Photo(db.Model):
     exif_camera_model = db.Column(db.String(100), nullable=True)
     width = db.Column(db.Integer, nullable=True)
     height = db.Column(db.Integer, nullable=True)
+    phash = db.Column(db.String(64), default='')
     replaced_placeholder_id = db.Column(db.Integer, db.ForeignKey('photo_placeholder.id'), nullable=True)
     highlights = db.relationship('Highlight', backref='photo', lazy=True, cascade="all, delete-orphan")
 
@@ -425,4 +426,86 @@ class AlbumAccessToken(db.Model):
             'expires_at': self.expires_at.isoformat() if self.expires_at else None,
             'is_active': self.is_active,
             'is_valid': self.is_valid(),
+        }
+
+
+class UrlImportTask(db.Model):
+    """URL 导入任务"""
+    id = db.Column(db.Integer, primary_key=True)
+    album_id = db.Column(db.Integer, db.ForeignKey('album.id'), nullable=False)
+    status = db.Column(db.String(20), default='pending')
+    total = db.Column(db.Integer, default=0)
+    processed = db.Column(db.Integer, default=0)
+    succeeded = db.Column(db.Integer, default=0)
+    failed = db.Column(db.Integer, default=0)
+    duplicates = db.Column(db.Integer, default=0)
+    pending_decisions = db.Column(db.Integer, default=0)
+    started_at = db.Column(db.DateTime, nullable=True)
+    completed_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    items = db.relationship('UrlImportItem', backref='task', lazy=True, cascade="all, delete-orphan")
+    album = db.relationship('Album', backref=db.backref('import_tasks', lazy=True))
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'album_id': self.album_id,
+            'album_title': self.album.title if self.album else None,
+            'status': self.status,
+            'total': self.total,
+            'processed': self.processed,
+            'succeeded': self.succeeded,
+            'failed': self.failed,
+            'duplicates': self.duplicates,
+            'pending_decisions': self.pending_decisions,
+            'progress': round(self.processed / self.total * 100, 1) if self.total > 0 else 0,
+            'started_at': self.started_at.isoformat() if self.started_at else None,
+            'completed_at': self.completed_at.isoformat() if self.completed_at else None,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class UrlImportItem(db.Model):
+    """URL 导入任务中的单条记录"""
+    id = db.Column(db.Integer, primary_key=True)
+    task_id = db.Column(db.Integer, db.ForeignKey('url_import_task.id'), nullable=False)
+    source_url = db.Column(db.String(1000), nullable=False)
+    status = db.Column(db.String(20), default='pending')
+    error_message = db.Column(db.Text, default='')
+    phash = db.Column(db.String(64), default='')
+    duplicate_photo_id = db.Column(db.Integer, db.ForeignKey('photo.id'), nullable=True)
+    duplicate_distance = db.Column(db.Integer, nullable=True)
+    photo_id = db.Column(db.Integer, db.ForeignKey('photo.id'), nullable=True)
+    saved_filename = db.Column(db.String(200), default='')
+    original_filename = db.Column(db.String(200), default='')
+    content_type = db.Column(db.String(100), default='')
+    file_size = db.Column(db.Integer, default=0)
+    width = db.Column(db.Integer, nullable=True)
+    height = db.Column(db.Integer, nullable=True)
+    decision = db.Column(db.String(20), default='')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    photo = db.relationship('Photo', foreign_keys=[photo_id], backref=db.backref('import_items', lazy=True))
+    duplicate_photo = db.relationship('Photo', foreign_keys=[duplicate_photo_id])
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'task_id': self.task_id,
+            'source_url': self.source_url,
+            'status': self.status,
+            'error_message': self.error_message,
+            'phash': self.phash or None,
+            'duplicate_photo_id': self.duplicate_photo_id,
+            'duplicate_distance': self.duplicate_distance,
+            'photo_id': self.photo_id,
+            'saved_filename': self.saved_filename or None,
+            'original_filename': self.original_filename or None,
+            'content_type': self.content_type or None,
+            'file_size': self.file_size,
+            'width': self.width,
+            'height': self.height,
+            'decision': self.decision or None,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
         }

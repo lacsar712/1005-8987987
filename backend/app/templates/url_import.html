@@ -1,0 +1,179 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto">
+    <div class="mb-8">
+        <a href="{{ url_for('index') }}" class="text-gray-500 hover:text-gray-700 text-sm flex items-center mb-4">
+            <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+            返回首页
+        </a>
+        <h1 class="text-3xl font-bold text-gray-900">从 URL 导入图片</h1>
+        <p class="text-gray-500 mt-1">支持粘贴图片直链或输入图集网页地址批量导入</p>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-sm p-8 border border-gray-100">
+        <form id="import-form" class="space-y-6" onsubmit="return startImport(event)">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">目标相册</label>
+                <select id="album_id" name="album_id" required
+                    class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary transition">
+                    {% for album in albums %}
+                    <option value="{{ album.id }}">{{ album.title }}（{{ album.photos|length }} 张）</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">导入方式</label>
+                <div class="flex space-x-4">
+                    <label class="flex items-center cursor-pointer">
+                        <input type="radio" name="source_type" value="urls" checked
+                            class="w-4 h-4 text-primary focus:ring-primary" onchange="switchSourceType('urls')">
+                        <span class="ml-2 text-sm text-gray-700">图片直链</span>
+                    </label>
+                    <label class="flex items-center cursor-pointer">
+                        <input type="radio" name="source_type" value="page"
+                            class="w-4 h-4 text-primary focus:ring-primary" onchange="switchSourceType('page')">
+                        <span class="ml-2 text-sm text-gray-700">网页 URL（自动解析）</span>
+                    </label>
+                </div>
+            </div>
+
+            <div id="urls-input-group">
+                <label class="block text-sm font-medium text-gray-700 mb-2">图片直链</label>
+                <textarea id="urls-input" name="urls" rows="8"
+                    placeholder="每行粘贴一条图片 URL，例如：&#10;https://example.com/photo1.jpg&#10;https://example.com/photo2.png&#10;https://example.com/photo3.webp"
+                    class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary transition font-mono text-sm resize-y"></textarea>
+                <p class="mt-1.5 text-xs text-gray-500">支持 http/https 直链，每行一条，最多支持 500 条</p>
+            </div>
+
+            <div id="page-input-group" class="hidden">
+                <label class="block text-sm font-medium text-gray-700 mb-2">网页地址</label>
+                <input id="page-input" name="page_url" type="url"
+                    placeholder="https://example.com/album"
+                    class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary transition font-mono text-sm">
+                <p class="mt-1.5 text-xs text-gray-500">系统会自动解析页面中所有的 img 标签并提取图片 URL</p>
+            </div>
+
+            <div class="bg-amber-50 border border-amber-200 rounded-xl p-5">
+                <div class="flex items-start">
+                    <svg class="w-5 h-5 text-amber-500 mt-0.5 mr-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    <div class="text-sm text-amber-800">
+                        <p class="font-medium mb-1">导入说明</p>
+                        <ul class="list-disc list-inside space-y-0.5 text-amber-700">
+                            <li>系统会校验 Content-Type 与文件大小，仅支持 JPG / PNG / GIF / WEBP，单张不超过 20MB</li>
+                            <li>导入前会计算感知哈希（pHash），与相册内已有照片比对，相似的会标记为疑似重复</li>
+                            <li>导入任务在后台异步执行，你可以在进度页查看处理状态与失败原因</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex justify-end">
+                <button type="submit" id="submit-btn"
+                    class="px-6 py-2.5 bg-primary hover:bg-blue-600 text-white rounded-lg shadow-sm transition flex items-center disabled:opacity-50 disabled:cursor-not-allowed">
+                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                    开始导入
+                </button>
+            </div>
+        </form>
+    </div>
+
+    {% if tasks %}
+    <div class="mt-10">
+        <div class="flex items-center justify-between mb-4">
+            <h2 class="text-xl font-semibold text-gray-800">最近导入任务</h2>
+            <a href="{{ url_for('url_import.history_page') }}" class="text-sm text-primary hover:text-blue-600">查看全部 →</a>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+            <table class="w-full text-sm">
+                <thead class="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">任务 ID</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">目标相册</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">进度</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">状态</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">操作</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                    {% for task in tasks[:5] %}
+                    <tr>
+                        <td class="px-4 py-3 text-gray-900 font-mono">#{{ task.id }}</td>
+                        <td class="px-4 py-3 text-gray-700">{{ task.album.title if task.album else '-' }}</td>
+                        <td class="px-4 py-3 text-gray-600">{{ task.processed }} / {{ task.total }}</td>
+                        <td class="px-4 py-3">
+                            {% set status_map = {
+                                'pending': ('bg-gray-100 text-gray-700', '等待中'),
+                                'running': ('bg-blue-100 text-blue-700', '处理中'),
+                                'completed': ('bg-green-100 text-green-700', '已完成'),
+                                'completed_with_errors': ('bg-yellow-100 text-yellow-700', '部分失败'),
+                                'failed': ('bg-red-100 text-red-700', '失败'),
+                                'awaiting_decision': ('bg-purple-100 text-purple-700', '待人工决策')
+                            } %}
+                            {% set badge_class, label = status_map.get(task.status, ('bg-gray-100 text-gray-700', task.status)) %}
+                            <span class="px-2 py-0.5 rounded-full text-xs font-medium {{ badge_class }}">{{ label }}</span>
+                        </td>
+                        <td class="px-4 py-3">
+                            <a href="{{ url_for('url_import.progress_page', task_id=task.id) }}" class="text-primary hover:text-blue-600">查看详情</a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+function switchSourceType(type) {
+    document.getElementById('urls-input-group').classList.toggle('hidden', type !== 'urls');
+    document.getElementById('page-input-group').classList.toggle('hidden', type !== 'page');
+}
+
+function startImport(e) {
+    e.preventDefault();
+    const btn = document.getElementById('submit-btn');
+    btn.disabled = true;
+    btn.innerHTML = `
+        <svg class="animate-spin -ml-1 mr-2 h-5 w-5 text-white inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+        正在准备...
+    `;
+
+    const sourceType = document.querySelector('input[name="source_type"]:checked').value;
+    const albumId = document.getElementById('album_id').value;
+    const sourceData = sourceType === 'urls'
+        ? document.getElementById('urls-input').value
+        : document.getElementById('page-input').value;
+
+    fetch('{{ url_for("url_import.api_start_import") }}', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ album_id: albumId, source_type: sourceType, source_data: sourceData })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            window.location.href = data.progress_url;
+        } else {
+            Swal.fire({ icon: 'error', title: '启动失败', text: data.message });
+            btn.disabled = false;
+            btn.innerHTML = `
+                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                开始导入
+            `;
+        }
+    })
+    .catch(err => {
+        Swal.fire({ icon: 'error', title: '网络错误', text: err.toString() });
+        btn.disabled = false;
+    });
+
+    return false;
+}
+</script>
+{% endblock %}

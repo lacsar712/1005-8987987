@@ -14,3 +14,11 @@ from .photo_edit_service import PhotoEditService
 from .guest_access_service import (
     GuestAccessConfigService, GuestInviteService, AlbumAccessTokenService
 )
+from .phash_service import (
+    compute_phash, hamming_distance, find_duplicate_in_album, is_duplicate,
+    PHASH_DISTANCE_THRESHOLD
+)
+from .url_import_service import (
+    UrlImportProcessor, extract_urls_from_text, extract_img_urls_from_page,
+    is_image_url, ALLOWED_CONTENT_TYPES, MAX_FILE_SIZE
+)

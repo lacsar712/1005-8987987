@@ -10,9 +10,10 @@ from .services import (
     TemplateSeeder, TemplateService, TemplateApplier, PlaceholderService,
     WatermarkConfigService, AlbumWatermarkService, WatermarkProcessor,
     RenameRuleEngine, RenameHistoryService,
-    GuestAccessConfigService, GuestInviteService, AlbumAccessTokenService
+    GuestAccessConfigService, GuestInviteService, AlbumAccessTokenService,
+    compute_phash
 )
-from .routes import templates_bp, watermark_bp, rename_bp, photo_edit_bp, access_control_bp
+from .routes import templates_bp, watermark_bp, rename_bp, photo_edit_bp, access_control_bp, url_import_bp
 from datetime import datetime, timedelta
 
 UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static/uploads')
@@ -50,6 +51,7 @@ def create_app():
     app.register_blueprint(rename_bp)
     app.register_blueprint(photo_edit_bp)
     app.register_blueprint(access_control_bp)
+    app.register_blueprint(url_import_bp)
 
     login_manager = LoginManager()
     login_manager.login_view = 'login'
@@ -322,6 +324,12 @@ def create_app():
                     if width and height and height > 0:
                         photo_aspect_ratio = round(width / height, 2)
 
+                    photo_phash = ''
+                    try:
+                        photo_phash = compute_phash(image_path=save_path) or ''
+                    except Exception:
+                        pass
+
                     new_photo = Photo(
                         filename=unique_filename,
                         original_filename=original_filename,
@@ -330,6 +338,7 @@ def create_app():
                         exif_camera_model=exif_camera_model,
                         width=width,
                         height=height,
+                        phash=photo_phash,
                     )
 
                     matched = PlaceholderService.find_best_matching_placeholder(placeholders, photo_aspect_ratio)

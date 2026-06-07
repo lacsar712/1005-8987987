@@ -1,0 +1,255 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto">
+    <div class="mb-6">
+        <a href="{{ url_for('url_import.import_page') }}" class="text-gray-500 hover:text-gray-700 text-sm flex items-center mb-4">
+            <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+            返回导入页
+        </a>
+        <div class="flex flex-wrap items-center gap-4">
+            <div>
+                <h1 class="text-2xl font-bold text-gray-900">导入任务 #{{ task.id }}</h1>
+                <p class="text-gray-500 mt-1">目标相册：<span class="font-medium text-gray-700">{{ task.album.title if task.album else '-' }}</span>
+            </div>
+            <div id="status-badge" class="ml-auto"></div>
+        </div>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-6">
+        <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-5">
+            <div class="bg-gray-50 rounded-lg p-4 text-center">
+                <div class="text-xs text-gray-500 mb-1">总数</div>
+                <div class="text-2xl font-bold text-gray-800" id="stat-total">{{ task.total }}</div>
+            </div>
+            <div class="bg-green-50 rounded-lg p-4 text-center">
+                <div class="text-xs text-gray-500 mb-1">成功</div>
+                <div class="text-2xl font-bold text-green-600" id="stat-succeeded">{{ task.succeeded }}</div>
+            </div>
+            <div class="bg-red-50 rounded-lg p-4 text-center">
+                <div class="text-xs text-gray-500 mb-1">失败</div>
+                <div class="text-2xl font-bold text-red-600" id="stat-failed">{{ task.failed }}</div>
+            </div>
+            <div class="bg-purple-50 rounded-lg p-4 text-center">
+                <div class="text-xs text-gray-500 mb-1">疑似重复</div>
+                <div class="text-2xl font-bold text-purple-600" id="stat-duplicates">{{ task.duplicates }}</div>
+            </div>
+            <div class="bg-blue-50 rounded-lg p-4 text-center">
+                <div class="text-xs text-gray-500 mb-1">已处理</div>
+                <div class="text-2xl font-bold text-blue-600" id="stat-processed">{{ task.processed }}</div>
+            </div>
+        </div>
+
+        <div>
+            <div class="flex justify-between text-sm text-gray-600 mb-2">
+                <span>导入进度</span>
+                <span id="progress-text">{{ task.progress }}%</span>
+            </div>
+            <div class="w-full bg-gray-200 rounded-full h-2.5">
+                <div id="progress-bar" class="bg-primary h-2.5 rounded-full transition-all duration-500" style="width: {{ task.progress }}%"></div>
+            </div>
+        </div>
+
+        <div class="mt-4 flex flex-wrap gap-2 text-xs text-gray-500">
+            {% if task.started_at %}
+            <span>开始时间：{{ task.started_at.strftime('%Y-%m-%d %H:%M:%S') }}</span>
+            {% endif %}
+            {% if task.completed_at %}
+            <span>完成时间：{{ task.completed_at.strftime('%Y-%m-%d %H:%M:%S') }}</span>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="flex flex-wrap gap-2 mb-4">
+        <button class="filter-btn px-3 py-1.5 text-sm rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition" data-status="all" onclick="filterStatus('all')">全部</button>
+        <button class="filter-btn px-3 py-1.5 text-sm rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition" data-status="success" onclick="filterStatus('success')">成功</button>
+        <button class="filter-btn px-3 py-1.5 text-sm rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition" data-status="failed" onclick="filterStatus('failed')">失败</button>
+        <button class="filter-btn px-3 py-1.5 text-sm rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition" data-status="duplicate" onclick="filterStatus('duplicate')">疑似重复</button>
+        <button class="filter-btn px-3 py-1.5 text-sm rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition" data-status="pending" onclick="filterStatus('pending')">等待中</button>
+        <button class="filter-btn px-3 py-1.5 text-sm rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition" data-status="skipped" onclick="filterStatus('skipped')">已跳过</button>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="border-b border-gray-100 px-4 py-3 flex items-center">
+            <h3 class="text-sm font-semibold text-gray-700">处理列表</h3>
+            <span id="item-count" class="ml-2 text-xs text-gray-500"></span>
+        </div>
+        <div id="items-list" class="divide-y divide-gray-100 max-h-[600px] overflow-y-auto"></div>
+        <div id="empty-state" class="p-12 text-center text-gray-400 text-sm hidden">
+            暂无记录
+        </div>
+    </div>
+</div>
+
+<div id="duplicate-modal" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden items-center justify-center hidden">
+    <div class="bg-white rounded-2xl p-6 max-w-lg w-full mx-4">
+        <h3 class="text-lg font-semibold text-gray-900 mb-4">处理疑似重复</h3>
+        <div id="modal-content"></div>
+        <div class="flex gap-3 mt-6 justify-end">
+            <button onclick="closeModal()" class="px-4 py-2 text-gray-600 hover:text-gray-800 transition">取消</button>
+        </div>
+    </div>
+</div>
+
+<script>
+const TASK_ID = {{ task.id }};
+let currentFilter = 'all';
+let pollTimer = null;
+let isRunning = true;
+
+const STATUS_LABELS = {
+    pending: { label: '等待中', cls: 'bg-gray-100 text-gray-700' },
+    downloading: { label: '下载中', cls: 'bg-blue-100 text-blue-700' },
+    success: { label: '成功', cls: 'bg-green-100 text-green-700' },
+    failed: { label: '失败', cls: 'bg-red-100 text-red-700' },
+    duplicate: { label: '疑似重复', cls: 'bg-purple-100 text-purple-700' },
+    skipped: { label: '已跳过', cls: 'bg-gray-100 text-gray-600' },
+};
+
+const TASK_STATUS_LABELS = {
+    pending: { label: '等待中', cls: 'bg-gray-100 text-gray-700' },
+    running: { label: '处理中', cls: 'bg-blue-100 text-blue-700' },
+    completed: { label: '已完成', cls: 'bg-green-100 text-green-700' },
+    completed_with_errors: { label: '部分失败', cls: 'bg-yellow-100 text-yellow-700' },
+    failed: { label: '失败', cls: 'bg-red-100 text-red-700' },
+    awaiting_decision: { label: '待人工决策', cls: 'bg-purple-100 text-purple-700' },
+};
+
+function renderTaskStatus(status) {
+    const info = TASK_STATUS_LABELS[status] || TASK_STATUS_LABELS.pending;
+    document.getElementById('status-badge').innerHTML = `<span class="px-3 py-1 rounded-full text-sm font-medium ${info.cls}">${info.label}</span>`;
+}
+
+function filterStatus(status) {
+    currentFilter = status;
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+        if (btn.dataset.status === status) {
+            btn.classList.add('bg-primary', 'text-white', 'border-primary');
+            btn.classList.remove('bg-white', 'text-gray-700', 'border-gray-300', 'hover:bg-gray-50');
+        } else {
+            btn.classList.remove('bg-primary', 'text-white', 'border-primary');
+            btn.classList.add('bg-white', 'text-gray-700', 'border-gray-300', 'hover:bg-gray-50');
+        }
+    });
+    loadItems();
+}
+
+function truncateUrl(url, maxLen = 80) {
+    if (url.length <= maxLen) return url;
+    return url.substring(0, maxLen - 3) + '...';
+}
+
+function renderItems(items) {
+    const list = document.getElementById('items-list');
+    const empty = document.getElementById('empty-state');
+    const countEl = document.getElementById('item-count');
+
+    let filtered = currentFilter === 'all' ? items : items.filter(i => i.status === currentFilter);
+    countEl.textContent = `(${filtered.length} 条)`;
+
+    if (!filtered.length) {
+        list.innerHTML = '';
+        empty.classList.remove('hidden');
+        return;
+    } else {
+        empty.classList.add('hidden');
+    }
+
+    list.innerHTML = filtered.map(item => {
+        const st = STATUS_LABELS[item.status] || STATUS_LABELS.pending;
+        let extra = '';
+        if (item.status === 'failed') {
+            extra = `<div class="text-xs text-red-600 mt-1 break-all">${item.error_message || ''}</div>`;
+        } else if (item.status === 'success' && item.photo_url) {
+            extra = `<div class="mt-2"><img src="${item.photo_url}" class="h-20 rounded-lg object-cover border border-gray-200"></div>`;
+        } else if (item.status === 'duplicate') {
+            const dup = item.duplicate_photo;
+            extra = `
+                <div class="mt-2 flex items-center gap-3">
+                    ${dup ? `<img src="${dup.url}" class="h-16 w-16 rounded-lg object-cover border border-gray-200">` : ''}
+                    <div class="flex-1">
+                        <div class="text-xs text-gray-600">
+                            与相册内已有照片相似（距离 ${item.duplicate_distance}）
+                            ${dup ? `<a href="/album/${dup.id || ''}" class="text-primary hover:underline ml-1">查看</a>` : ''}
+                        </div>
+                        <div class="flex gap-2 mt-1.5">
+                            <button onclick="resolveDecision(${item.id}, 'import')" class="text-xs px-3 py-1 bg-primary text-white rounded hover:bg-blue-600 transition">仍要导入</button>
+                            <button onclick="resolveDecision(${item.id}, 'skip')" class="text-xs px-3 py-1 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition">跳过</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        return `
+            <div class="p-4 hover:bg-gray-50 transition">
+                <div class="flex items-start gap-3">
+                    <span class="px-2 py-0.5 rounded text-xs font-medium ${st.cls} shrink-0">${st.label}</span>
+                    <div class="flex-1 min-w-0">
+                        <div class="text-sm text-gray-800 font-mono break-all" title="${item.source_url}">${truncateUrl(item.source_url)}</div>
+                        ${item.original_filename ? `<div class="text-xs text-gray-500 mt-0.5">${item.original_filename}</div>` : ''}
+                        ${item.width && item.height ? `<div class="text-xs text-gray-400 mt-0.5">${item.width} × ${item.height} · ${(item.file_size / 1024).toFixed(1)} KB</div>` : ''}
+                        ${extra}
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function loadItems() {
+    fetch(`/url-import/api/task/${TASK_ID}/items${currentFilter !== 'all' ? '?status=' + currentFilter : ''}`)
+        .then(r => r.json())
+        .then(data => renderItems(data.items));
+}
+
+function pollTask() {
+    fetch(`/url-import/api/task/${TASK_ID}`)
+        .then(r => r.json())
+        .then(data => {
+            const t = data.task;
+            document.getElementById('stat-total').textContent = t.total;
+            document.getElementById('stat-succeeded').textContent = t.succeeded;
+            document.getElementById('stat-failed').textContent = t.failed;
+            document.getElementById('stat-duplicates').textContent = t.duplicates;
+            document.getElementById('stat-processed').textContent = t.processed;
+            document.getElementById('progress-text').textContent = t.progress + '%';
+            document.getElementById('progress-bar').style.width = t.progress + '%';
+            renderTaskStatus(t.status);
+
+            isRunning = data.is_running;
+            if (!isRunning && pollTimer) {
+                clearInterval(pollTimer);
+                pollTimer = null;
+            }
+            loadItems();
+        });
+}
+
+function resolveDecision(itemId, decision) {
+    fetch(`/url-import/api/item/${itemId}/decision`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ decision })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            Swal.fire({ icon: 'success', title: decision === 'import' ? '已加入导入队列' : '已跳过', toast: true, position: 'top', timer: 2000, showConfirmButton: false });
+            pollTask();
+        } else {
+            Swal.fire({ icon: 'error', title: '操作失败', text: data.message });
+        }
+    });
+}
+
+function closeModal() {
+    document.getElementById('duplicate-modal').classList.add('hidden');
+}
+
+renderTaskStatus('{{ task.status }}');
+filterStatus('all');
+pollTask();
+pollTimer = setInterval(pollTask, 2000);
+</script>
+{% endblock %}
