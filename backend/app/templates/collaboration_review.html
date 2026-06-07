@@ -1,0 +1,292 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="mb-8">
+    <div class="flex items-center text-sm text-gray-500 mb-4">
+        <a href="{{ url_for('index') }}" class="hover:text-primary transition flex items-center">
+            <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+            返回首页
+        </a>
+        <span class="mx-2">/</span>
+        <a href="{{ url_for('collaboration.collaboration_management_page') }}" class="hover:text-primary transition">协作管理</a>
+        <span class="mx-2">/</span>
+        <span class="text-gray-800 font-medium">协作审核</span>
+    </div>
+
+    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+            <h1 class="text-3xl font-bold text-gray-900">协作审核</h1>
+            <p class="text-gray-500 mt-1">审核协作者上传的照片，共 <span id="total-count" class="font-semibold text-amber-600">{{ pending_photos|length }}</span> 张待审核</p>
+        </div>
+        <div class="flex items-center gap-2">
+            <button id="select-all-btn" onclick="toggleSelectAll()" class="bg-white hover:bg-gray-50 text-gray-700 border border-gray-300 px-4 py-2 rounded-lg shadow-sm transition text-sm flex items-center">
+                <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
+                全选
+            </button>
+            <button onclick="batchApprove()" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg shadow-sm transition text-sm flex items-center">
+                <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                批量通过
+            </button>
+            <button onclick="batchReject()" class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg shadow-sm transition text-sm flex items-center">
+                <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                批量拒绝
+            </button>
+        </div>
+    </div>
+
+    <div class="mt-4 flex flex-wrap items-center gap-3">
+        <select id="filter-album" onchange="applyFilter()" class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-primary focus:border-primary">
+            <option value="">全部相册</option>
+            {% for a in albums %}
+            <option value="{{ a.id }}" {% if current_album_id == a.id %}selected{% endif %}>{{ a.title }}</option>
+            {% endfor %}
+        </select>
+        <select id="filter-link" onchange="applyFilter()" class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-primary focus:border-primary">
+            <option value="">全部协作链接</option>
+            {% for l in links %}
+            <option value="{{ l.id }}" {% if current_link_id == l.id %}selected{% endif %}>{{ l.name or l.token[:12] }}</option>
+            {% endfor %}
+        </select>
+    </div>
+</div>
+
+{% if pending_photos %}
+<div id="photos-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+    {% for photo in pending_photos %}
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden photo-card" data-photo-id="{{ photo.id }}">
+        <div class="relative aspect-[4/3] bg-gray-100 overflow-hidden group">
+            <img src="{{ url_for('static', filename='uploads/' + photo.filename) }}" class="w-full h-full object-cover cursor-zoom-in" onclick="previewImage('{{ url_for('static', filename='uploads/' + photo.filename) }}')">
+            <label class="absolute top-3 left-3 z-10 cursor-pointer">
+                <input type="checkbox" class="photo-check w-5 h-5 text-primary rounded border-2 border-white shadow-md bg-white/90 focus:ring-primary" data-photo-id="{{ photo.id }}">
+            </label>
+            <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-3 flex items-center justify-between opacity-0 group-hover:opacity-100 transition">
+                <span class="text-white text-xs truncate max-w-[60%]">{{ photo.original_filename }}</span>
+                <span class="text-white/80 text-xs">{{ photo.width or '?' }}×{{ photo.height or '?' }}</span>
+            </div>
+        </div>
+        <div class="p-4">
+            <div class="flex items-start justify-between gap-2 mb-3">
+                <div class="min-w-0 flex-1">
+                    <div class="flex items-center gap-2 text-sm">
+                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">待审核</span>
+                        <span class="text-gray-400 text-xs">{{ photo.uploaded_at.strftime('%Y-%m-%d %H:%M') if photo.uploaded_at else '' }}</span>
+                    </div>
+                    <div class="text-sm text-gray-500 mt-1">
+                        相册：<span class="text-gray-800 font-medium">{{ photo.album_title }}</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="space-y-2 mb-4 text-sm">
+                {% if photo.contributor_name %}
+                <div class="flex items-center gap-2">
+                    <svg class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
+                    <span class="text-gray-700 truncate"><strong>{{ photo.contributor_name }}</strong> 提交</span>
+                </div>
+                {% endif %}
+                {% if photo.link_name %}
+                <div class="flex items-center gap-2">
+                    <svg class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg>
+                    <span class="text-gray-500 text-xs truncate">链接：{{ photo.link_name }}</span>
+                </div>
+                {% endif %}
+                {% if photo.message %}
+                <div class="bg-blue-50 border border-blue-100 rounded-lg p-3 mt-2">
+                    <div class="flex items-center gap-1.5 text-xs text-blue-600 mb-1">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
+                        留言
+                    </div>
+                    <p class="text-sm text-gray-700 whitespace-pre-wrap">{{ photo.message }}</p>
+                </div>
+                {% endif %}
+                {% if photo.exif_camera_model or photo.exif_taken_at %}
+                <div class="text-xs text-gray-400">
+                    {% if photo.exif_camera_model %}{{ photo.exif_camera_model }}{% endif %}
+                    {% if photo.exif_taken_at %} · {{ photo.exif_taken_at.strftime('%Y-%m-%d %H:%M') }}{% endif %}
+                </div>
+                {% endif %}
+            </div>
+
+            <div class="flex items-center gap-2">
+                <button onclick="approvePhoto({{ photo.id }})" class="flex-1 bg-green-600 hover:bg-green-700 text-white py-2 rounded-lg text-sm font-medium transition flex items-center justify-center">
+                    <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                    通过
+                </button>
+                <button onclick="rejectPhoto({{ photo.id }})" class="flex-1 bg-red-500 hover:bg-red-600 text-white py-2 rounded-lg text-sm font-medium transition flex items-center justify-center">
+                    <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    拒绝
+                </button>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="bg-white rounded-2xl shadow-sm border border-gray-200 py-20 text-center">
+    <svg class="w-20 h-20 mx-auto text-green-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+    <p class="text-gray-600 font-medium">暂无待审核的照片</p>
+    <p class="text-gray-400 text-sm mt-1">所有协作照片都已处理完毕</p>
+</div>
+{% endif %}
+
+<script>
+    function showToast(message, type='success') {
+        const Toast = Swal.mixin({ toast: true, position: 'top', showConfirmButton: false, timer: 2500, timerProgressBar: true });
+        Toast.fire({ icon: type, title: message });
+    }
+
+    function previewImage(url) {
+        Swal.fire({
+            imageUrl: url,
+            imageAlt: '预览',
+            showConfirmButton: false,
+            width: 'auto',
+            padding: 0,
+            background: 'rgba(0,0,0,0.9)',
+            backdrop: 'rgba(0,0,0,0.8)',
+            customClass: { popup: 'preview-popup' }
+        });
+    }
+
+    function applyFilter() {
+        const albumId = document.getElementById('filter-album').value;
+        const linkId = document.getElementById('filter-link').value;
+        const params = new URLSearchParams();
+        if (albumId) params.set('album_id', albumId);
+        if (linkId) params.set('link_id', linkId);
+        const qs = params.toString();
+        location.href = '{{ url_for("collaboration.collaboration_review_page") }}' + (qs ? '?' + qs : '');
+    }
+
+    function getSelectedIds() {
+        return Array.from(document.querySelectorAll('.photo-check:checked')).map(c => parseInt(c.dataset.photoId));
+    }
+
+    let selectAllState = false;
+    function toggleSelectAll() {
+        selectAllState = !selectAllState;
+        document.querySelectorAll('.photo-check').forEach(c => c.checked = selectAllState);
+        const btn = document.getElementById('select-all-btn');
+        btn.innerHTML = selectAllState
+            ? '<svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>取消全选'
+            : '<svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>全选';
+    }
+
+    function removeCard(photoId) {
+        const card = document.querySelector(`.photo-card[data-photo-id="${photoId}"]`);
+        if (card) {
+            card.style.transition = 'all 0.3s';
+            card.style.opacity = '0';
+            card.style.transform = 'scale(0.95)';
+            setTimeout(() => {
+                card.remove();
+                const count = document.querySelectorAll('.photo-card').length;
+                document.getElementById('total-count').textContent = count;
+                if (count === 0) location.reload();
+            }, 300);
+        }
+    }
+
+    async function approvePhoto(id) {
+        try {
+            const r = await fetch(`/api/collaboration/photos/${id}/approve`, { method: 'POST' });
+            const d = await r.json();
+            if (d.success) {
+                showToast('已通过审核');
+                removeCard(id);
+            } else {
+                showToast(d.message || '操作失败', 'error');
+            }
+        } catch (e) {
+            showToast('网络错误', 'error');
+        }
+    }
+
+    async function rejectPhoto(id) {
+        const res = await Swal.fire({
+            title: '拒绝该照片？',
+            text: '拒绝后照片文件将被删除，此操作不可撤销。',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#ef4444',
+            confirmButtonText: '确认拒绝',
+            cancelButtonText: '取消'
+        });
+        if (!res.isConfirmed) return;
+        try {
+            const r = await fetch(`/api/collaboration/photos/${id}/reject`, { method: 'POST' });
+            const d = await r.json();
+            if (d.success) {
+                showToast('已拒绝');
+                removeCard(id);
+            } else {
+                showToast(d.message || '操作失败', 'error');
+            }
+        } catch (e) {
+            showToast('网络错误', 'error');
+        }
+    }
+
+    async function batchApprove() {
+        const ids = getSelectedIds();
+        if (ids.length === 0) { showToast('请先选择照片', 'warning'); return; }
+        const res = await Swal.fire({
+            title: `批量通过 ${ids.length} 张照片？`,
+            text: '通过后照片将直接加入对应相册',
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonColor: '#16a34a',
+            confirmButtonText: '确认通过',
+            cancelButtonText: '取消'
+        });
+        if (!res.isConfirmed) return;
+        try {
+            const r = await fetch('/api/collaboration/photos/batch-approve', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ photo_ids: ids })
+            });
+            const d = await r.json();
+            if (d.success) {
+                showToast(`已通过 ${d.approved_count} 张照片`);
+                ids.forEach(id => removeCard(id));
+            } else {
+                showToast(d.message || '操作失败', 'error');
+            }
+        } catch (e) {
+            showToast('网络错误', 'error');
+        }
+    }
+
+    async function batchReject() {
+        const ids = getSelectedIds();
+        if (ids.length === 0) { showToast('请先选择照片', 'warning'); return; }
+        const res = await Swal.fire({
+            title: `批量拒绝 ${ids.length} 张照片？`,
+            text: '拒绝后照片文件将被删除，此操作不可撤销。',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#ef4444',
+            confirmButtonText: '确认拒绝',
+            cancelButtonText: '取消'
+        });
+        if (!res.isConfirmed) return;
+        try {
+            const r = await fetch('/api/collaboration/photos/batch-reject', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ photo_ids: ids })
+            });
+            const d = await r.json();
+            if (d.success) {
+                showToast(`已拒绝 ${d.rejected_count} 张照片`);
+                ids.forEach(id => removeCard(id));
+            } else {
+                showToast(d.message || '操作失败', 'error');
+            }
+        } catch (e) {
+            showToast('网络错误', 'error');
+        }
+    }
+</script>
+{% endblock %}

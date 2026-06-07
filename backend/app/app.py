@@ -4,7 +4,7 @@ from flask import Flask, render_template, request, redirect, url_for, flash, abo
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from werkzeug.utils import secure_filename
 from PIL import Image, ExifTags
-from .db import db, Album, Photo, Highlight, CurationConfig, Template, PhotoPlaceholder
+from .db import db, Album, Photo, Highlight, CurationConfig, Template, PhotoPlaceholder, CollaborationLink, CollaborationPhoto
 from .services import (
     TimelineService, OnThisDayService, PhotoDateGrouper,
     TemplateSeeder, TemplateService, TemplateApplier, PlaceholderService,
@@ -13,7 +13,7 @@ from .services import (
     GuestAccessConfigService, GuestInviteService, AlbumAccessTokenService,
     compute_phash
 )
-from .routes import templates_bp, watermark_bp, rename_bp, photo_edit_bp, access_control_bp, url_import_bp
+from .routes import templates_bp, watermark_bp, rename_bp, photo_edit_bp, access_control_bp, url_import_bp, collaboration_bp
 from datetime import datetime, timedelta
 
 UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static/uploads')
@@ -52,6 +52,7 @@ def create_app():
     app.register_blueprint(photo_edit_bp)
     app.register_blueprint(access_control_bp)
     app.register_blueprint(url_import_bp)
+    app.register_blueprint(collaboration_bp)
 
     login_manager = LoginManager()
     login_manager.login_view = 'login'
@@ -68,6 +69,7 @@ def create_app():
         'access_control.guest_logout',
         'access_control.invite_entry',
         'access_control.album_access_entry',
+        'collaboration.collaborate_upload_page',
         'login',
         'static',
         'access_control.api_get_config',
@@ -161,8 +163,16 @@ def create_app():
         placeholders = PhotoPlaceholder.query.filter_by(album_id=album.id).order_by(PhotoPlaceholder.slot_index.asc()).all()
         layout_config = album.get_layout_config()
         tags = album.get_tags_list()
+
+        collaboration_links = []
+        pending_count = 0
+        if current_user.is_authenticated:
+            collaboration_links = CollaborationLink.query.filter_by(album_id=album.id).order_by(CollaborationLink.created_at.desc()).all()
+            pending_count = CollaborationPhoto.query.filter_by(album_id=album.id, status='pending').count()
+
         return render_template('album.html', album=album, highlighted_ids=highlighted_ids,
-                          placeholders=placeholders, layout_config=layout_config, tags=tags)
+                          placeholders=placeholders, layout_config=layout_config, tags=tags,
+                          collaboration_links=collaboration_links, pending_count=pending_count)
 
     @app.route('/highlights')
     def highlights():

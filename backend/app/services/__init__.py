@@ -22,3 +22,6 @@ from .url_import_service import (
     UrlImportProcessor, extract_urls_from_text, extract_img_urls_from_page,
     is_image_url, ALLOWED_CONTENT_TYPES, MAX_FILE_SIZE
 )
+from .collaboration_service import (
+    CollaborationLinkService, CollaborationPhotoService
+)

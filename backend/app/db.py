@@ -509,3 +509,108 @@ class UrlImportItem(db.Model):
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,
         }
+
+
+class CollaborationLink(db.Model):
+    """协作上传链接"""
+    id = db.Column(db.Integer, primary_key=True)
+    token = db.Column(db.String(64), unique=True, nullable=False)
+    album_id = db.Column(db.Integer, db.ForeignKey('album.id'), nullable=False)
+    name = db.Column(db.String(100), default='')
+    max_uploads = db.Column(db.Integer, default=0)
+    expires_at = db.Column(db.DateTime, nullable=True)
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_by = db.Column(db.String(50), default='admin')
+    album = db.relationship('Album', backref=db.backref('collaboration_links', lazy=True, cascade='all, delete-orphan'))
+    photos = db.relationship('CollaborationPhoto', backref='link', lazy=True, cascade='all, delete-orphan')
+
+    def is_valid(self):
+        if not self.is_active:
+            return False
+        if self.expires_at and datetime.utcnow() >= self.expires_at:
+            return False
+        if self.max_uploads > 0:
+            uploaded_count = CollaborationPhoto.query.filter_by(
+                link_id=self.id
+            ).filter(CollaborationPhoto.status != 'rejected').count()
+            if uploaded_count >= self.max_uploads:
+                return False
+        return True
+
+    def get_stats(self):
+        photos = CollaborationPhoto.query.filter_by(link_id=self.id).all()
+        total = len(photos)
+        pending = sum(1 for p in photos if p.status == 'pending')
+        approved = sum(1 for p in photos if p.status == 'approved')
+        rejected = sum(1 for p in photos if p.status == 'rejected')
+        return {
+            'total': total,
+            'pending': pending,
+            'approved': approved,
+            'rejected': rejected,
+        }
+
+    def to_dict(self, include_stats=True):
+        data = {
+            'id': self.id,
+            'token': self.token,
+            'album_id': self.album_id,
+            'album_title': self.album.title if self.album else None,
+            'name': self.name,
+            'max_uploads': self.max_uploads,
+            'expires_at': self.expires_at.isoformat() if self.expires_at else None,
+            'is_active': self.is_active,
+            'is_valid': self.is_valid(),
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'created_by': self.created_by,
+        }
+        if include_stats:
+            data['stats'] = self.get_stats()
+        return data
+
+
+class CollaborationPhoto(db.Model):
+    """协作上传的照片（待审核/已通过/已拒绝）"""
+    id = db.Column(db.Integer, primary_key=True)
+    link_id = db.Column(db.Integer, db.ForeignKey('collaboration_link.id'), nullable=False)
+    album_id = db.Column(db.Integer, db.ForeignKey('album.id'), nullable=False)
+    filename = db.Column(db.String(100), nullable=False)
+    original_filename = db.Column(db.String(100), nullable=False)
+    contributor_name = db.Column(db.String(100), default='')
+    message = db.Column(db.Text, default='')
+    status = db.Column(db.String(20), default='pending')
+    photo_id = db.Column(db.Integer, db.ForeignKey('photo.id'), nullable=True)
+    width = db.Column(db.Integer, nullable=True)
+    height = db.Column(db.Integer, nullable=True)
+    exif_taken_at = db.Column(db.DateTime, nullable=True)
+    exif_camera_model = db.Column(db.String(100), nullable=True)
+    uploaded_at = db.Column(db.DateTime, default=datetime.utcnow)
+    reviewed_at = db.Column(db.DateTime, nullable=True)
+    reviewed_by = db.Column(db.String(50), default='')
+    photo = db.relationship('Photo', foreign_keys=[photo_id], backref=db.backref('collaboration_photo', uselist=False, lazy=True))
+    album = db.relationship('Album', backref=db.backref('collaboration_photos', lazy=True))
+
+    def to_dict(self):
+        from flask import url_for
+        return {
+            'id': self.id,
+            'link_id': self.link_id,
+            'album_id': self.album_id,
+            'album_title': self.album.title if self.album else None,
+            'filename': self.filename,
+            'original_filename': self.original_filename,
+            'contributor_name': self.contributor_name,
+            'message': self.message,
+            'status': self.status,
+            'photo_id': self.photo_id,
+            'width': self.width,
+            'height': self.height,
+            'exif_taken_at': self.exif_taken_at.isoformat() if self.exif_taken_at else None,
+            'exif_camera_model': self.exif_camera_model,
+            'uploaded_at': self.uploaded_at.isoformat() if self.uploaded_at else None,
+            'reviewed_at': self.reviewed_at.isoformat() if self.reviewed_at else None,
+            'reviewed_by': self.reviewed_by,
+            'url': url_for('static', filename='uploads/' + self.filename) if self.filename else None,
+            'link_name': self.link.name if self.link else None,
+        }
