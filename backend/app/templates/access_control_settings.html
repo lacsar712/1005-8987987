@@ -336,53 +336,110 @@
 
 <script>
     const originalPassword = '{{ config.password }}';
+    const originalEnabled = {{ 'true' if config.enabled else 'false' }};
+    const originalWelcome = {{ config.welcome_text | tojson }};
 
-    document.getElementById('guest-enabled').addEventListener('change', function() {
-        const panel = document.getElementById('password-panel');
-        panel.style.opacity = this.checked ? '1' : '0.5';
-        panel.style.pointerEvents = this.checked ? 'auto' : 'none';
+    let hasUnsavedChanges = false;
+    let isSaving = false;
+
+    function markDirty() {
+        hasUnsavedChanges = true;
+    }
+
+    function markClean() {
+        hasUnsavedChanges = false;
+    }
+
+    window.addEventListener('beforeunload', function(e) {
+        if (hasUnsavedChanges) {
+            e.preventDefault();
+            e.returnValue = '您有未保存的更改，确定要离开吗？';
+            return e.returnValue;
+        }
     });
 
-    document.getElementById('guest-password').addEventListener('input', function() {
-        this.value = this.value.replace(/[^0-9]/g, '').slice(0, 8);
-    });
-
-    function saveGuestConfig() {
+    function _collectGuestConfig() {
         const enabled = document.getElementById('guest-enabled').checked;
         const passwordInput = document.getElementById('guest-password');
         const welcomeText = document.getElementById('welcome-text').value;
-
         let password = passwordInput.value;
         const allStars = /^\*+$/.test(password);
-        if (allStars) {
-            password = '';
-        }
+        if (allStars) password = '';
+        return { enabled, password, welcomeText };
+    }
+
+    function _saveGuestConfig(silent, requireReload) {
+        if (isSaving) return Promise.resolve(false);
+        const { enabled, password, welcomeText } = _collectGuestConfig();
 
         if (enabled && password && (password.length < 4 || password.length > 8)) {
-            Swal.fire({ icon: 'error', title: '口令格式错误', text: '请输入4-8位数字口令' });
-            return;
+            if (!silent) Swal.fire({ icon: 'error', title: '口令格式错误', text: '请输入4-8位数字口令' });
+            return Promise.resolve(false);
         }
         if (enabled && !password && !originalPassword) {
-            Swal.fire({ icon: 'error', title: '请设置口令', text: '开启访客口令后必须设置4-8位数字口令' });
-            return;
+            if (!silent) Swal.fire({ icon: 'error', title: '请设置口令', text: '开启访客口令后必须设置4-8位数字口令' });
+            return Promise.resolve(false);
         }
 
         const payload = { enabled, welcome_text: welcomeText };
         if (password) payload.password = password;
 
-        fetch('/api/access-control/config', {
+        isSaving = true;
+        return fetch('/api/access-control/config', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         }).then(r => r.json()).then(data => {
+            isSaving = false;
             if (data.success) {
-                Swal.fire({ icon: 'success', title: '保存成功', timer: 1500, showConfirmButton: false });
-                setTimeout(() => location.reload(), 1000);
+                markClean();
+                if (!silent) Swal.fire({ icon: 'success', title: '保存成功', timer: 1200, showConfirmButton: false });
+                if (requireReload) setTimeout(() => location.reload(), 800);
+                return true;
             } else {
-                Swal.fire({ icon: 'error', title: '保存失败', text: data.message || '未知错误' });
+                if (!silent) Swal.fire({ icon: 'error', title: '保存失败', text: data.message || '未知错误' });
+                return false;
+            }
+        }).catch(() => { isSaving = false; return false; });
+    }
+
+    function saveGuestConfig() {
+        _saveGuestConfig(false, true);
+    }
+
+    document.getElementById('guest-enabled').addEventListener('change', function() {
+        const panel = document.getElementById('password-panel');
+        panel.style.opacity = this.checked ? '1' : '0.5';
+        panel.style.pointerEvents = this.checked ? 'auto' : 'none';
+        markDirty();
+        _saveGuestConfig(true, false).then(ok => {
+            if (ok) {
+                const Toast = Swal.mixin({
+                    toast: true, position: 'top', showConfirmButton: false, timer: 1500, timerProgressBar: true
+                });
+                Toast.fire({ icon: 'success', title: this.checked ? '访客口令已开启' : '访客口令已关闭' });
             }
         });
-    }
+    });
+
+    document.getElementById('guest-password').addEventListener('input', function() {
+        this.value = this.value.replace(/[^0-9]/g, '').slice(0, 8);
+        markDirty();
+    });
+
+    document.getElementById('guest-password').addEventListener('blur', function() {
+        if (!hasUnsavedChanges) return;
+        const pwd = this.value;
+        const allStars = /^\*+$/.test(pwd);
+        if (pwd && !allStars && (pwd.length < 4 || pwd.length > 8)) return;
+        _saveGuestConfig(true, false);
+    });
+
+    document.getElementById('welcome-text').addEventListener('input', markDirty);
+    document.getElementById('welcome-text').addEventListener('blur', function() {
+        if (!hasUnsavedChanges) return;
+        _saveGuestConfig(true, false);
+    });
 
     function openInviteModal() {
         document.getElementById('invite-modal').classList.remove('hidden');

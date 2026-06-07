@@ -76,12 +76,55 @@ def create_app():
         'access_control.api_invite_qrcode',
     }
 
+    UPLOADS_URL_PREFIX = '/static/uploads/'
+
+    def _check_guest_auth():
+        if not GuestAccessConfigService.is_enabled():
+            return None
+        guest_ok = session.get('guest_authenticated', False)
+        config_version = GuestAccessConfigService.get_config_version()
+        session_version = session.get('guest_config_version', 0)
+        if session_version != config_version:
+            guest_ok = False
+            session.pop('guest_authenticated', None)
+            session.pop('guest_album_scope', None)
+            session.pop('guest_invite_code', None)
+            session.pop('album_access_token', None)
+        if not guest_ok:
+            return False
+        return True
+
+    def _check_photo_scope(filename):
+        if current_user.is_authenticated:
+            return True
+        scope = session.get('guest_album_scope', []) or []
+        if not scope:
+            return True
+        allowed_ids = set(scope)
+        photo = Photo.query.filter_by(filename=filename).first()
+        if not photo:
+            return False
+        return photo.album_id in allowed_ids
+
     @app.before_request
     def guest_access_middleware():
         if current_user.is_authenticated:
             return None
 
+        path = request.path
+        is_uploads_file = path.startswith(UPLOADS_URL_PREFIX)
         endpoint = request.endpoint
+
+        if is_uploads_file:
+            auth_ok = _check_guest_auth()
+            if auth_ok is False:
+                abort(403)
+            if auth_ok is True:
+                filename = path[len(UPLOADS_URL_PREFIX):]
+                if not _check_photo_scope(filename):
+                    abort(403)
+            return None
+
         if endpoint in PUBLIC_ENDPOINTS:
             return None
 
@@ -99,24 +142,14 @@ def create_app():
             if endpoint in api_public:
                 pass
 
-        if GuestAccessConfigService.is_enabled():
-            guest_ok = session.get('guest_authenticated', False)
-            config_version = GuestAccessConfigService.get_config_version()
-            session_version = session.get('guest_config_version', 0)
-            if session_version != config_version:
-                guest_ok = False
-                session.pop('guest_authenticated', None)
-                session.pop('guest_album_scope', None)
-                session.pop('guest_invite_code', None)
-                session.pop('album_access_token', None)
-
-            if not guest_ok:
-                if request.endpoint and request.endpoint.startswith('api_'):
-                    return jsonify({'success': False, 'message': '访客验证已过期，请重新验证', 'need_gate': True}), 401
-                next_url = request.path
-                if request.query_string:
-                    next_url = f"{request.path}?{request.query_string.decode('utf-8')}"
-                return redirect(url_for('access_control.guest_gate', next=next_url))
+        auth_ok = _check_guest_auth()
+        if auth_ok is False:
+            if request.endpoint and request.endpoint.startswith('api_'):
+                return jsonify({'success': False, 'message': '访客验证已过期，请重新验证', 'need_gate': True}), 401
+            next_url = request.path
+            if request.query_string:
+                next_url = f"{request.path}?{request.query_string.decode('utf-8')}"
+            return redirect(url_for('access_control.guest_gate', next=next_url))
 
         return None
 
