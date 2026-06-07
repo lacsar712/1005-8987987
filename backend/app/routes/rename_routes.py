@@ -18,7 +18,7 @@ def rename_history_page():
 @rename_bp.route('/api/preview', methods=['POST'])
 @login_required
 def api_preview():
-    """生成重命名预览"""
+    """生成重命名预览（始终返回全相册，标记选中状态）"""
     data = request.get_json() or {}
     album_id = data.get('album_id')
     photo_ids = data.get('photo_ids') or []
@@ -31,33 +31,30 @@ def api_preview():
     if not album:
         return jsonify({'success': False, 'message': '相册不存在'}), 404
 
-    if not photo_ids:
-        photos = album.photos
-    else:
-        photos = Photo.query.filter(
-            Photo.album_id == album_id,
-            Photo.id.in_([int(pid) for pid in photo_ids if str(pid).isdigit()])
-        ).all()
+    selected_ids = set(int(pid) for pid in photo_ids if str(pid).isdigit())
+    photos = album.photos
 
     if not photos:
-        return jsonify({'success': False, 'message': '没有选中的照片'}), 400
+        return jsonify({'success': False, 'message': '该相册暂无照片'}), 400
 
     try:
         preview_items = RenameRuleEngine.preview(photos, rules)
     except Exception as e:
         return jsonify({'success': False, 'message': f'生成预览失败: {str(e)}'}), 500
 
-    # 附加缩略图 URL
     for item in preview_items:
         photo = next((p for p in photos if p.id == item['photo_id']), None)
         if photo:
             item['thumbnail'] = url_for('static', filename='uploads/' + photo.filename)
+            item['is_selected'] = photo.id in selected_ids
 
-    changed_count = sum(1 for i in preview_items if i['changed'])
+    changed_count = sum(1 for i in preview_items if i['changed'] and i.get('is_selected'))
+    selected_count = sum(1 for i in preview_items if i.get('is_selected'))
     return jsonify({
         'success': True,
         'preview': preview_items,
         'total': len(preview_items),
+        'selected_count': selected_count,
         'changed_count': changed_count,
     })
 

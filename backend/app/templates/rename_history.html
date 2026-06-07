@@ -23,7 +23,7 @@
                 <option value="{{ album.id }}">{{ album.title }}</option>
                 {% endfor %}
             </select>
-            <button id="rollback-latest-btn" class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg shadow transition flex items-center text-sm">
+            <button id="rollback-latest-btn" disabled class="bg-gray-300 text-gray-500 px-4 py-2 rounded-lg shadow flex items-center text-sm cursor-not-allowed">
                 <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"></path></svg>
                 回滚最近一次
             </button>
@@ -81,8 +81,23 @@
         }
     }
 
+    function updateRollbackBtnState(histories) {
+        const btn = document.getElementById('rollback-latest-btn');
+        const hasApplied = histories && histories.some(h => h.is_applied);
+        if (hasApplied) {
+            btn.disabled = false;
+            btn.classList.remove('bg-gray-300', 'text-gray-500', 'cursor-not-allowed');
+            btn.classList.add('bg-red-500', 'hover:bg-red-600', 'text-white');
+        } else {
+            btn.disabled = true;
+            btn.classList.add('bg-gray-300', 'text-gray-500', 'cursor-not-allowed');
+            btn.classList.remove('bg-red-500', 'hover:bg-red-600', 'text-white');
+        }
+    }
+
     function renderHistory(histories) {
         const container = document.getElementById('history-container');
+        updateRollbackBtnState(histories);
         if (!histories || histories.length === 0) {
             container.innerHTML = `
                 <div class="text-center py-16">
@@ -176,9 +191,15 @@
         });
     }
 
-    function rollbackLatest() {
+    async function rollbackLatest() {
         const albumId = document.getElementById('album-filter').value || null;
-        Swal.fire({
+        const btn = document.getElementById('rollback-latest-btn');
+        if (btn.disabled) {
+            showToast('没有可回滚的操作', 'warning');
+            return;
+        }
+
+        const confirmResult = await Swal.fire({
             title: '回滚最近一次操作？',
             text: albumId ? '将回滚当前筛选相册的最近一次批量重命名' : '将回滚全局最近一次批量重命名操作',
             icon: 'warning',
@@ -187,22 +208,22 @@
             cancelButtonText: '取消',
             confirmButtonColor: '#ef4444',
             cancelButtonColor: '#6b7280',
-        }).then(async (result) => {
-            if (!result.isConfirmed) return;
-            try {
-                const r = await fetch('/rename/api/history/rollback-latest', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ album_id: albumId ? parseInt(albumId) : null })
-                });
-                const data = await r.json();
-                if (!data.success) throw new Error(data.message);
-                showToast(data.message, 'success');
-                setTimeout(loadHistory, 500);
-            } catch (e) {
-                showToast(`回滚失败: ${e.message}`, 'error');
-            }
         });
+        if (!confirmResult.isConfirmed) return;
+
+        try {
+            const r = await fetch('/rename/api/history/rollback-latest', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ album_id: albumId ? parseInt(albumId) : null })
+            });
+            const data = await r.json();
+            if (!data.success) throw new Error(data.message);
+            showToast(data.message, 'success');
+            setTimeout(loadHistory, 500);
+        } catch (e) {
+            showToast(`回滚失败: ${e.message}`, 'error');
+        }
     }
 </script>
 {% endblock %}

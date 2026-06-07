@@ -502,12 +502,12 @@
                     <div class="border-t border-gray-100 pt-4">
                         <div class="flex items-center justify-between mb-2">
                             <label class="text-sm font-medium text-gray-700">
-                                预览 (<span id="preview-changed-count">0</span> 张将被重命名)
+                                预览（全相册 <span id="preview-total-count">0</span> 张 · 已选 <span id="preview-selected-count">0</span> 张 · 其中 <span id="preview-changed-count" class="text-primary font-bold">0</span> 张将被重命名）
                             </label>
                             <div class="flex items-center gap-2 text-xs">
-                                <button type="button" id="select-all-preview-btn" class="text-primary hover:underline">全选</button>
+                                <button type="button" id="select-all-preview-btn" class="text-primary hover:underline">勾选全部已选</button>
                                 <span class="text-gray-300">|</span>
-                                <button type="button" id="deselect-all-preview-btn" class="text-primary hover:underline">全不选</button>
+                                <button type="button" id="deselect-all-preview-btn" class="text-primary hover:underline">取消全部已选</button>
                                 <span class="text-gray-400 ml-2">取消勾选可从本次操作中排除</span>
                             </div>
                         </div>
@@ -520,15 +520,25 @@
                 </div>
             `;
 
-            Swal.fire({
+            const swalInstance = Swal.mixin({
+                customClass: {
+                    confirmButton: 'bg-primary hover:bg-blue-600 text-white px-5 py-2 rounded-lg shadow transition',
+                    cancelButton: 'bg-gray-100 hover:bg-gray-200 text-gray-700 px-5 py-2 rounded-lg transition'
+                },
+                buttonsStyling: false
+            });
+
+            let isExecuted = false;
+            swalInstance.fire({
                 title: '批量重命名',
                 html: html,
                 showCancelButton: true,
                 confirmButtonText: '确认重命名',
-                cancelButtonText: '取消',
+                cancelButtonText: '关闭',
                 confirmButtonColor: '#3b82f6',
                 width: '95%',
                 maxWidth: 880,
+                allowOutsideClick: false,
                 didOpen: () => {
                     document.querySelectorAll('.token-btn').forEach(btn => {
                         btn.addEventListener('click', () => {
@@ -544,10 +554,20 @@
                     });
                     document.getElementById('refresh-preview-btn').addEventListener('click', refreshPreview);
                     document.getElementById('select-all-preview-btn').addEventListener('click', () => {
-                        document.querySelectorAll('.preview-exclude').forEach(cb => { cb.checked = true; excludedPreviewIds.delete(parseInt(cb.dataset.photoId)); });
+                        document.querySelectorAll('.preview-exclude').forEach(cb => {
+                            if (cb.dataset.selected === 'true') {
+                                cb.checked = true;
+                                excludedPreviewIds.delete(parseInt(cb.dataset.photoId));
+                            }
+                        });
                     });
                     document.getElementById('deselect-all-preview-btn').addEventListener('click', () => {
-                        document.querySelectorAll('.preview-exclude').forEach(cb => { cb.checked = false; excludedPreviewIds.add(parseInt(cb.dataset.photoId)); });
+                        document.querySelectorAll('.preview-exclude').forEach(cb => {
+                            if (cb.dataset.selected === 'true') {
+                                cb.checked = false;
+                                excludedPreviewIds.add(parseInt(cb.dataset.photoId));
+                            }
+                        });
                     });
                     ['rule-template', 'rule-zero-pad', 'rule-start-index', 'rule-regex', 'rule-sort-by'].forEach(id => {
                         document.getElementById(id).addEventListener('change', refreshPreview);
@@ -556,7 +576,43 @@
                     setTimeout(refreshPreview, 100);
                 },
                 preConfirm: async () => {
-                    return await doExecuteRename();
+                    if (isExecuted) return true;
+                    Swal.showLoading();
+                    const result = await doExecuteRename();
+                    Swal.hideLoading();
+                    if (!result || !result.success) {
+                        Swal.showValidationMessage(result ? (result.message || '执行失败') : '执行失败');
+                        return false;
+                    }
+                    isExecuted = true;
+                    const content = document.getElementById('swal2-html-container');
+                    if (content) {
+                        content.innerHTML = `
+                            <div class="text-center py-6">
+                                <div class="w-16 h-16 mx-auto mb-4 rounded-full bg-green-50 flex items-center justify-center">
+                                    <svg class="w-8 h-8 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                                </div>
+                                <h3 class="text-xl font-bold text-gray-900 mb-2">重命名完成</h3>
+                                <p class="text-gray-600 mb-4">${escapeHtml(result.message || '操作成功')}</p>
+                                <p class="text-sm text-gray-500 mb-1">成功重命名 <span class="font-bold text-green-600">${result.renamed_count}</span> 张照片</p>
+                                ${result.history_id ? `<p class="text-xs text-gray-400">可在「重命名历史」页面一键回滚（操作ID: ${result.history_id}）</p>` : ''}
+                            </div>
+                        `;
+                    }
+                    const confirmBtn = Swal.getConfirmButton();
+                    if (confirmBtn) {
+                        confirmBtn.textContent = '完成';
+                    }
+                    const cancelBtn = Swal.getCancelButton();
+                    if (cancelBtn) {
+                        cancelBtn.style.display = 'none';
+                    }
+                    Swal.resetValidationMessage();
+                    return false;
+                }
+            }).then((result) => {
+                if (result.isConfirmed && isExecuted) {
+                    setTimeout(() => location.reload(), 300);
                 }
             });
         }
@@ -583,7 +639,13 @@
                 const data = await r.json();
                 if (!data.success) throw new Error(data.message);
                 currentPreview = data.preview;
+                document.getElementById('preview-total-count').textContent = data.total;
+                document.getElementById('preview-selected-count').textContent = data.selected_count || selectedPhotoIds.size;
                 document.getElementById('preview-changed-count').textContent = data.changed_count;
+                excludedPreviewIds.clear();
+                currentPreview.forEach(item => {
+                    if (!item.is_selected) excludedPreviewIds.add(item.photo_id);
+                });
                 renderPreviewTable(currentPreview);
             } catch (e) {
                 container.innerHTML = `<div class="text-red-500 text-sm py-6 text-center">预览生成失败: ${e.message}</div>`;
@@ -598,14 +660,18 @@
             }
             const rows = preview.map((item, idx) => {
                 const isExcluded = excludedPreviewIds.has(item.photo_id);
+                const isSelected = !!item.is_selected;
                 const diffClass = item.changed ? '' : 'text-gray-400';
-                const changedBadge = item.changed
-                    ? '<span class="text-[10px] px-1.5 py-0.5 bg-green-50 text-green-600 rounded">将重命名</span>'
-                    : '<span class="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded">不变</span>';
+                const rowBg = isSelected ? (idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50') : 'bg-gray-50/80 opacity-75';
+                const changedBadge = !isSelected
+                    ? '<span class="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded border border-gray-200">未选中</span>'
+                    : (item.changed
+                        ? '<span class="text-[10px] px-1.5 py-0.5 bg-green-50 text-green-600 rounded border border-green-200">将重命名</span>'
+                        : '<span class="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded border border-gray-200">不变</span>');
                 return `
-                    <div class="flex items-center gap-3 px-3 py-2 border-b border-gray-100 hover:bg-gray-50 ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}">
-                        <input type="checkbox" class="preview-exclude w-4 h-4 text-primary rounded" data-photo-id="${item.photo_id}" ${!isExcluded ? 'checked' : ''} title="取消勾选以排除该项">
-                        <img src="${item.thumbnail}" class="w-10 h-10 object-cover rounded border border-gray-200">
+                    <div class="flex items-center gap-3 px-3 py-2 border-b border-gray-100 hover:bg-gray-100 ${rowBg}">
+                        <input type="checkbox" class="preview-exclude w-4 h-4 text-primary rounded" data-photo-id="${item.photo_id}" data-selected="${isSelected}" ${!isExcluded ? 'checked' : ''} ${!isSelected ? 'disabled' : ''} title="${isSelected ? '取消勾选以排除该项' : '该照片未在多选列表中选中，不会被重命名'}">
+                        <img src="${item.thumbnail}" class="w-10 h-10 object-cover rounded border ${isSelected ? 'border-gray-200' : 'border-gray-300 grayscale'}">
                         <div class="flex-1 min-w-0 flex items-center gap-3 ${diffClass}">
                             <div class="flex-1 min-w-0">
                                 <div class="text-xs text-gray-500">原名称</div>
@@ -614,7 +680,7 @@
                             <svg class="w-4 h-4 text-gray-300 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"></path></svg>
                             <div class="flex-1 min-w-0">
                                 <div class="text-xs text-gray-500">新名称</div>
-                                <div class="text-sm font-mono truncate font-semibold ${item.changed ? 'text-primary' : ''}">${escapeHtml(item.new_name)}</div>
+                                <div class="text-sm font-mono truncate font-semibold ${item.changed && isSelected ? 'text-primary' : ''}">${escapeHtml(item.new_name)}</div>
                             </div>
                         </div>
                         <div class="flex flex-col items-end gap-1 flex-shrink-0">
@@ -652,13 +718,11 @@
             const rules = { template, zero_pad: zeroPad, start_index: startIndex, regex_pattern: regexPattern, sort_by: sortBy, sort_order: sortOrder };
 
             if (currentPreview.length === 0) {
-                Swal.showValidationMessage('请先生成预览');
-                return false;
+                return { success: false, message: '请先生成预览' };
             }
-            const willRename = currentPreview.filter(i => i.changed && !excludedPreviewIds.has(i.photo_id)).length;
+            const willRename = currentPreview.filter(i => i.is_selected && i.changed && !excludedPreviewIds.has(i.photo_id)).length;
             if (willRename === 0) {
-                Swal.showValidationMessage('没有照片将被重命名（可能已全部排除或名称未变化）');
-                return false;
+                return { success: false, message: '没有照片将被重命名（可能已全部排除或名称未变化）' };
             }
 
             try {
@@ -674,13 +738,16 @@
                 });
                 const data = await r.json();
                 if (!data.success) {
-                    Swal.showValidationMessage(data.message || '执行失败');
-                    return false;
+                    return { success: false, message: data.message || '执行失败' };
                 }
-                return { success: true, count: data.renamed_count, message: data.message };
+                return {
+                    success: true,
+                    renamed_count: data.renamed_count,
+                    message: data.message,
+                    history_id: data.history_id
+                };
             } catch (e) {
-                Swal.showValidationMessage(`执行失败: ${e.message}`);
-                return false;
+                return { success: false, message: `执行失败: ${e.message}` };
             }
         }
 
