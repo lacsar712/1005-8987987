@@ -69,7 +69,8 @@ def collaborate_upload_page(token):
 def collaboration_management_page():
     """协作管理页面"""
     links = CollaborationLinkService.list_all()
-    albums = Album.query.order_by(Album.created_at.desc()).all()
+    album_models = Album.query.order_by(Album.created_at.desc()).all()
+    albums = [{'id': a.id, 'title': a.title, 'photo_count': len(a.photos)} for a in album_models]
     pending_stats = CollaborationPhotoService.get_pending_stats()
     return render_template(
         'collaboration_management.html',
@@ -87,8 +88,10 @@ def collaboration_review_page():
     album_id = request.args.get('album_id', type=int)
     link_id = request.args.get('link_id', type=int)
     pending_photos = CollaborationPhotoService.list_pending(album_id=album_id, link_id=link_id)
-    albums = Album.query.order_by(Album.created_at.desc()).all()
-    links = CollaborationLinkService.list_all()
+    album_models = Album.query.order_by(Album.created_at.desc()).all()
+    albums = [{'id': a.id, 'title': a.title} for a in album_models]
+    link_models = CollaborationLinkService.list_all()
+    links = [{'id': l.id, 'name': l.name or l.token[:12]} for l in link_models]
     pending_stats = CollaborationPhotoService.get_pending_stats()
     return render_template(
         'collaboration_review.html',
