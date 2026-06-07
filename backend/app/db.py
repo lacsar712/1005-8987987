@@ -1,8 +1,43 @@
 import json
 from datetime import datetime
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import inspect, text
 
 db = SQLAlchemy()
+
+# 对已有 SQLite 表增量补列（create_all 不会 alter 旧表）
+_SCHEMA_MIGRATIONS = {
+    'album': [
+        ('is_admin_only', 'BOOLEAN DEFAULT 0'),
+        ('template_id', 'INTEGER'),
+        ('layout_config', "TEXT DEFAULT '{}'"),
+        ('tags', "TEXT DEFAULT '[]'"),
+    ],
+    'photo': [
+        ('exif_taken_at', 'DATETIME'),
+        ('exif_camera_model', 'VARCHAR(100)'),
+        ('width', 'INTEGER'),
+        ('height', 'INTEGER'),
+        ('phash', "VARCHAR(64) DEFAULT ''"),
+        ('replaced_placeholder_id', 'INTEGER'),
+    ],
+}
+
+
+def migrate_schema():
+    """为旧版数据库补齐模型新增列，避免启动时查询失败。"""
+    inspector = inspect(db.engine)
+    existing_tables = set(inspector.get_table_names())
+    for table_name, columns in _SCHEMA_MIGRATIONS.items():
+        if table_name not in existing_tables:
+            continue
+        existing_cols = {col['name'] for col in inspector.get_columns(table_name)}
+        for col_name, col_def in columns:
+            if col_name not in existing_cols:
+                db.session.execute(
+                    text(f'ALTER TABLE {table_name} ADD COLUMN {col_name} {col_def}')
+                )
+    db.session.commit()
 
 
 class Album(db.Model):

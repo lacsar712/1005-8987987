@@ -4,7 +4,7 @@ from flask import Flask, render_template, request, redirect, url_for, flash, abo
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from werkzeug.utils import secure_filename
 from PIL import Image, ExifTags
-from .db import db, Album, Photo, Highlight, CurationConfig, Template, PhotoPlaceholder, CollaborationLink, CollaborationPhoto
+from .db import db, migrate_schema, Album, Photo, Highlight, CurationConfig, Template, PhotoPlaceholder, CollaborationLink, CollaborationPhoto
 from .services import (
     TimelineService, OnThisDayService, PhotoDateGrouper,
     TemplateSeeder, TemplateService, TemplateApplier, PlaceholderService,
@@ -135,6 +135,7 @@ def create_app():
 
     with app.app_context():
         db.create_all()
+        migrate_schema()
         TemplateSeeder.seed_builtin_templates()
         if Album.query.count() == 0:
             default_album = Album(title="我的首个相册", description="欢迎使用在线相册系统")
