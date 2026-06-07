@@ -161,8 +161,31 @@ class TemplateService:
         )
         template.set_suggested_tags(data.get("suggested_tags", []))
         template.set_layout_params(data.get("layout_params", {}))
-        template.set_placeholder_svgs(data.get("placeholder_svgs", []))
-        template.cover_placeholder = data.get("cover_placeholder", "")
+
+        placeholder_svgs = data.get("placeholder_svgs") or []
+        if not placeholder_svgs:
+            layout_params = data.get("layout_params", {})
+            color_scheme = "blank"
+            presets = PlaceholderService.get_preset_placeholders(color_scheme)
+            placeholder_svgs = []
+            for p in presets:
+                svg = PlaceholderService.generate_svg(
+                    aspect_ratio=p["aspect_ratio"],
+                    label=p["label"],
+                    color_scheme=color_scheme,
+                )
+                placeholder_svgs.append({
+                    "svg": svg,
+                    "aspect_ratio": round(p["aspect_ratio"], 2),
+                    "label": p["label"],
+                })
+        template.set_placeholder_svgs(placeholder_svgs)
+
+        cover_placeholder = data.get("cover_placeholder")
+        if not cover_placeholder and placeholder_svgs:
+            cover_placeholder = placeholder_svgs[0]["svg"]
+        template.cover_placeholder = cover_placeholder or ""
+
         db.session.add(template)
         db.session.commit()
         return template
@@ -186,9 +209,31 @@ class TemplateService:
         if "layout_params" in data:
             template.set_layout_params(data["layout_params"])
         if "placeholder_svgs" in data:
-            template.set_placeholder_svgs(data["placeholder_svgs"])
+            svgs = data["placeholder_svgs"]
+            if svgs is not None and len(svgs) == 0 and len(template.get_placeholder_svgs()) == 0:
+                presets = PlaceholderService.get_preset_placeholders("blank")
+                gen_svgs = []
+                for p in presets:
+                    svg = PlaceholderService.generate_svg(
+                        aspect_ratio=p["aspect_ratio"],
+                        label=p["label"],
+                        color_scheme="blank",
+                    )
+                    gen_svgs.append({
+                        "svg": svg,
+                        "aspect_ratio": round(p["aspect_ratio"], 2),
+                        "label": p["label"],
+                    })
+                template.set_placeholder_svgs(gen_svgs)
+            elif svgs is not None:
+                template.set_placeholder_svgs(svgs)
         if "cover_placeholder" in data:
-            template.cover_placeholder = data["cover_placeholder"]
+            if data["cover_placeholder"]:
+                template.cover_placeholder = data["cover_placeholder"]
+            elif not template.cover_placeholder:
+                svgs = template.get_placeholder_svgs()
+                if svgs:
+                    template.cover_placeholder = svgs[0]["svg"]
         if "is_active" in data:
             template.is_active = data["is_active"]
         db.session.commit()

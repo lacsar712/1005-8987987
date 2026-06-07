@@ -146,16 +146,45 @@
     {% set columns = layout_config.get('columns', 4) if layout_config else 4 %}
     {% set gap = layout_config.get('gap', 16) if layout_config else 16 %}
     {% set radius = layout_config.get('border_radius', 8) if layout_config else 8 %}
-    {% set col_class = 'columns-1' %}
-    {% if columns >= 2 %}{% set col_class = col_class + ' sm:columns-2' %}{% endif %}
-    {% if columns >= 3 %}{% set col_class = col_class + ' md:columns-3' %}{% endif %}
-    {% if columns >= 4 %}{% set col_class = col_class + ' lg:columns-4' %}{% endif %}
-    {% if columns >= 5 %}{% set col_class = col_class + ' xl:columns-5' %}{% endif %}
+    {% set layout_mode = layout_config.get('layout_mode', 'masonry') if layout_config else 'masonry' %}
 
-    <div id="gallery" class="{{ col_class }}" style="gap: {{ gap }}px; column-gap: {{ gap }}px;">
+    {% if layout_mode == 'grid' %}
+        {% set grid_cols_class = 'grid-cols-1' %}
+        {% if columns >= 2 %}{% set grid_cols_class = grid_cols_class + ' sm:grid-cols-2' %}{% endif %}
+        {% if columns >= 3 %}{% set grid_cols_class = grid_cols_class + ' md:grid-cols-3' %}{% endif %}
+        {% if columns >= 4 %}{% set grid_cols_class = grid_cols_class + ' lg:grid-cols-4' %}{% endif %}
+        {% if columns >= 5 %}{% set grid_cols_class = grid_cols_class + ' xl:grid-cols-5' %}{% endif %}
+        <div id="gallery" class="grid {{ grid_cols_class }}" style="gap: {{ gap }}px;">
+    {% else %}
+        {% set col_class = 'columns-1' %}
+        {% if columns >= 2 %}{% set col_class = col_class + ' sm:columns-2' %}{% endif %}
+        {% if columns >= 3 %}{% set col_class = col_class + ' md:columns-3' %}{% endif %}
+        {% if columns >= 4 %}{% set col_class = col_class + ' lg:columns-4' %}{% endif %}
+        {% if columns >= 5 %}{% set col_class = col_class + ' xl:columns-5' %}{% endif %}
+        <div id="gallery" class="{{ col_class }}" style="column-gap: {{ gap }}px;">
+    {% endif %}
+
         {% for item in all_items %}
             {% if item.type == 'placeholder' %}
                 {% set ph = item.obj %}
+                {% if layout_mode == 'grid' %}
+                <div class="relative group overflow-hidden shadow-sm hover:shadow-md transition placeholder-slot aspect-square"
+                     data-placeholder-id="{{ ph.id }}"
+                     data-aspect-ratio="{{ ph.aspect_ratio }}"
+                     style="border-radius: {{ radius }}px;">
+                    <div class="relative w-full h-full">
+                        <div class="absolute inset-0 flex items-center justify-center">
+                            {{ ph.svg_content|safe }}
+                        </div>
+                        <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent p-3 opacity-0 group-hover:opacity-100 transition duration-300">
+                            <span class="text-white text-xs flex items-center">
+                                <svg class="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                                槽位 #{{ ph.slot_index + 1 }} · 上传照片自动匹配
+                            </span>
+                        </div>
+                    </div>
+                </div>
+                {% else %}
                 <div class="break-inside-avoid mb-4 relative group rounded-lg overflow-hidden shadow-sm hover:shadow-md transition placeholder-slot"
                      data-placeholder-id="{{ ph.id }}"
                      data-aspect-ratio="{{ ph.aspect_ratio }}"
@@ -172,8 +201,18 @@
                         </div>
                     </div>
                 </div>
+                {% endif %}
             {% else %}
                 {% set photo = item.obj %}
+                {% if layout_mode == 'grid' %}
+                <div class="relative group overflow-hidden shadow-sm hover:shadow-lg transition photo-item aspect-square"
+                     data-photo-id="{{ photo.id }}"
+                     style="border-radius: {{ radius }}px;">
+                    <img src="{{ url_for('static', filename='uploads/' + photo.filename) }}"
+                         alt="{{ photo.original_filename }}"
+                         class="w-full h-full object-cover cursor-zoom-in"
+                         style="border-radius: {{ radius }}px;">
+                {% else %}
                 <div class="break-inside-avoid mb-4 relative group overflow-hidden shadow-sm hover:shadow-lg transition photo-item"
                      data-photo-id="{{ photo.id }}"
                      style="border-radius: {{ radius }}px;">
@@ -181,10 +220,11 @@
                          alt="{{ photo.original_filename }}"
                          class="w-full h-auto object-cover cursor-zoom-in"
                          style="border-radius: {{ radius }}px;">
+                {% endif %}
 
                     {% if photo.id in highlighted_ids %}
                     <div class="absolute top-2 right-2 bg-yellow-400 text-yellow-900 rounded-full p-1.5 shadow-lg z-10" title="已在精选集中">
-                        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.783.57-1.838-.197-1.538-1.118l1.07-3.292a1 1 0 00-.363-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"></path></svg>
+                        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.538-1.118l1.07-3.292a1 1 0 00-.363-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"></path></svg>
                     </div>
                     {% endif %}
                     {% if photo.collaboration_photo %}
@@ -200,7 +240,7 @@
                             <input type="checkbox" class="photo-select w-5 h-5 text-primary rounded border-2 border-white shadow-md bg-white/80 focus:ring-primary" data-photo-id="{{ photo.id }}">
                         </label>
                     </div>
-                    <div class="photo-selected-badge absolute inset-0 bg-primary/20 border-4 border-primary pointer-events-none hidden rounded-lg z-10" style="border-radius: {{ radius }}px;"></div>
+                    <div class="photo-selected-badge absolute inset-0 bg-primary/20 border-4 border-primary pointer-events-none hidden z-10" style="border-radius: {{ radius }}px;"></div>
 
                     <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-4 opacity-0 group-hover:opacity-100 transition duration-300 flex justify-between items-end pointer-events-none">
                         <span class="text-white text-xs truncate max-w-[50%] photo-filename">{{ photo.original_filename }}</span>
