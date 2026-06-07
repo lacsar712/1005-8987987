@@ -5,17 +5,31 @@ class PhotoEditor {
         this.container = document.getElementById('canvasContainer');
         this.originalImg = new Image();
         this.originalImg.crossOrigin = 'anonymous';
+
+        this.workCanvas = document.createElement('canvas');
+        this.workCtx = this.workCanvas.getContext('2d');
+
         this.operations = [...(window.INITIAL_OPERATIONS || [])];
+        this.versionsCache = {};
+        (window.INITIAL_VERSIONS || []).forEach(v => {
+            this.versionsCache[v.id] = v;
+        });
+
         this.currentTool = null;
+        this.previewOp = null;
         this.compareMode = false;
+
         this.mosaicDrawing = false;
         this.mosaicStart = null;
-        this.tempCanvas = document.createElement('canvas');
-        this.tempCtx = this.tempCanvas.getContext('2d');
-        this.cropBox = { x: 0, y: 0, width: 0, height: 0, active: false, ratio: null };
         this.tempMosaicRect = null;
         this._mosaicCellSize = 15;
+
+        this.cropBox = { x: 0, y: 0, width: 0, height: 0, active: false, ratio: null };
         this._cropDrag = null;
+
+        this.previewVersionId = null;
+        this.savedOperationsBeforePreview = null;
+        this.savedPreviewOpBeforePreview = null;
 
         this.init();
     }
@@ -34,26 +48,36 @@ class PhotoEditor {
     resetCanvasSize() {
         const maxW = this.container.clientWidth - 32;
         const maxH = this.container.clientHeight - 32;
-        let w = this.originalImg.naturalWidth;
-        let h = this.originalImg.naturalHeight;
-        const ratio = Math.min(maxW / w, maxH / h, 1);
-        this.canvas.width = w;
-        this.canvas.height = h;
-        this.canvas.style.width = (w * ratio) + 'px';
-        this.canvas.style.height = (h * ratio) + 'px';
-        this.tempCanvas.width = w;
-        this.tempCanvas.height = h;
+        const naturalW = this.originalImg.naturalWidth;
+        const naturalH = this.originalImg.naturalHeight;
+        const ratio = Math.min(maxW / naturalW, maxH / naturalH, 1);
+
+        this.canvas.width = naturalW;
+        this.canvas.height = naturalH;
+        this.canvas.style.width = (naturalW * ratio) + 'px';
+        this.canvas.style.height = (naturalH * ratio) + 'px';
+        this.workCanvas.width = naturalW;
+        this.workCanvas.height = naturalH;
     }
 
     render() {
-        this.ctx.save();
-        this.ctx.setTransform(1, 0, 0, 1, 0, 0);
-        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-        this.ctx.drawImage(this.originalImg, 0, 0);
+        this.workCtx.setTransform(1, 0, 0, 1, 0, 0);
+        this.workCtx.clearRect(0, 0, this.workCanvas.width, this.workCanvas.height);
+        this.workCtx.drawImage(this.originalImg, 0, 0);
 
         for (let i = 0; i < this.operations.length; i++) {
-            this.applyOperation(this.ctx, this.operations[i]);
+            this.applyOperation(this.workCtx, this.operations[i]);
         }
+
+        if (this.previewOp) {
+            this.applyOperation(this.workCtx, this.previewOp);
+        }
+
+        this.canvas.setTransform(1, 0, 0, 1, 0, 0);
+        this.canvas.width = this.workCanvas.width;
+        this.canvas.height = this.workCanvas.height;
+        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        this.ctx.drawImage(this.workCanvas, 0, 0);
 
         if (this.tempMosaicRect) {
             this.drawTempMosaic(this.ctx, this.tempMosaicRect);
@@ -63,7 +87,6 @@ class PhotoEditor {
             this.drawCropOverlay();
         }
 
-        this.ctx.restore();
         this.updateUndoState();
     }
 
@@ -89,49 +112,53 @@ class PhotoEditor {
 
     applyRotate(ctx, angle) {
         const rad = -angle * Math.PI / 180;
-        const w = this.canvas.width;
-        const h = this.canvas.height;
+        const w = ctx.canvas.width;
+        const h = ctx.canvas.height;
         const cos = Math.abs(Math.cos(rad));
         const sin = Math.abs(Math.sin(rad));
         const newW = Math.ceil(w * cos + h * sin);
         const newH = Math.ceil(w * sin + h * cos);
 
-        this.tempCanvas.width = newW;
-        this.tempCanvas.height = newH;
-        this.tempCtx.setTransform(1, 0, 0, 1, 0, 0);
-        this.tempCtx.clearRect(0, 0, newW, newH);
-        this.tempCtx.translate(newW / 2, newH / 2);
-        this.tempCtx.rotate(rad);
-        this.tempCtx.drawImage(this.canvas, -w / 2, -h / 2);
+        const tmp = document.createElement('canvas');
+        tmp.width = newW;
+        tmp.height = newH;
+        const tctx = tmp.getContext('2d');
+        tctx.setTransform(1, 0, 0, 1, 0, 0);
+        tctx.translate(newW / 2, newH / 2);
+        tctx.rotate(rad);
+        tctx.drawImage(ctx.canvas, -w / 2, -h / 2);
 
-        this.canvas.width = newW;
-        this.canvas.height = newH;
+        ctx.canvas.width = newW;
+        ctx.canvas.height = newH;
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.clearRect(0, 0, newW, newH);
-        ctx.drawImage(this.tempCanvas, 0, 0);
+        ctx.drawImage(tmp, 0, 0);
     }
 
     applyCrop(ctx, params) {
-        const x = Math.max(0, Math.min(params.x || 0, this.canvas.width));
-        const y = Math.max(0, Math.min(params.y || 0, this.canvas.height));
-        const w = Math.max(1, Math.min(params.width || this.canvas.width, this.canvas.width - x));
-        const h = Math.max(1, Math.min(params.height || this.canvas.height, this.canvas.height - y));
+        const x = Math.max(0, Math.min(params.x || 0, ctx.canvas.width));
+        const y = Math.max(0, Math.min(params.y || 0, ctx.canvas.height));
+        const w = Math.max(1, Math.min(params.width || ctx.canvas.width, ctx.canvas.width - x));
+        const h = Math.max(1, Math.min(params.height || ctx.canvas.height, ctx.canvas.height - y));
 
-        this.tempCanvas.width = w;
-        this.tempCanvas.height = h;
-        this.tempCtx.setTransform(1, 0, 0, 1, 0, 0);
-        this.tempCtx.clearRect(0, 0, w, h);
-        this.tempCtx.drawImage(this.canvas, x, y, w, h, 0, 0, w, h);
+        const tmp = document.createElement('canvas');
+        tmp.width = w;
+        tmp.height = h;
+        const tctx = tmp.getContext('2d');
+        tctx.setTransform(1, 0, 0, 1, 0, 0);
+        tctx.drawImage(ctx.canvas, x, y, w, h, 0, 0, w, h);
 
-        this.canvas.width = w;
-        this.canvas.height = h;
+        ctx.canvas.width = w;
+        ctx.canvas.height = h;
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.clearRect(0, 0, w, h);
-        ctx.drawImage(this.tempCanvas, 0, 0);
+        ctx.drawImage(tmp, 0, 0);
     }
 
     applyBrightness(ctx, factor) {
-        const imgData = ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
+        const w = ctx.canvas.width;
+        const h = ctx.canvas.height;
+        const imgData = ctx.getImageData(0, 0, w, h);
         const data = imgData.data;
         for (let i = 0; i < data.length; i += 4) {
             data[i] = Math.min(255, Math.max(0, data[i] * factor));
@@ -142,7 +169,9 @@ class PhotoEditor {
     }
 
     applyContrast(ctx, factor) {
-        const imgData = ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
+        const w = ctx.canvas.width;
+        const h = ctx.canvas.height;
+        const imgData = ctx.getImageData(0, 0, w, h);
         const data = imgData.data;
         const intercept = 128 * (1 - factor);
         for (let i = 0; i < data.length; i += 4) {
@@ -157,10 +186,10 @@ class PhotoEditor {
         const cellSize = params.cell_size || 10;
         const shape = params.shape || 'rect';
         let { x, y, width, height } = params;
-        x = Math.max(0, Math.min(x, this.canvas.width));
-        y = Math.max(0, Math.min(y, this.canvas.height));
-        width = Math.max(1, Math.min(width, this.canvas.width - x));
-        height = Math.max(1, Math.min(height, this.canvas.height - y));
+        x = Math.max(0, Math.min(x, ctx.canvas.width));
+        y = Math.max(0, Math.min(y, ctx.canvas.height));
+        width = Math.max(1, Math.min(width, ctx.canvas.width - x));
+        height = Math.max(1, Math.min(height, ctx.canvas.height - y));
 
         try {
             const region = ctx.getImageData(x, y, width, height);
@@ -169,9 +198,10 @@ class PhotoEditor {
             const smallW = cellsX;
             const smallH = cellsY;
 
-            this.tempCanvas.width = smallW;
-            this.tempCanvas.height = smallH;
-            const sctx = this.tempCtx;
+            const small = document.createElement('canvas');
+            small.width = smallW;
+            small.height = smallH;
+            const sctx = small.getContext('2d');
             sctx.imageSmoothingEnabled = false;
             sctx.clearRect(0, 0, smallW, smallH);
 
@@ -199,16 +229,12 @@ class PhotoEditor {
                 }
             }
 
-            this.tempCanvas.width = width;
-            this.tempCanvas.height = height;
-            sctx.imageSmoothingEnabled = false;
-            const smallCanvas = document.createElement('canvas');
-            smallCanvas.width = smallW;
-            smallCanvas.height = smallH;
-            smallCanvas.getContext('2d').drawImage(this.tempCanvas, 0, 0, smallW, smallH, 0, 0, smallW, smallH);
-            sctx.setTransform(1, 0, 0, 1, 0, 0);
-            sctx.clearRect(0, 0, width, height);
-            sctx.drawImage(smallCanvas, 0, 0, smallW, smallH, 0, 0, width, height);
+            const scaled = document.createElement('canvas');
+            scaled.width = width;
+            scaled.height = height;
+            const scctx = scaled.getContext('2d');
+            scctx.imageSmoothingEnabled = false;
+            scctx.drawImage(small, 0, 0, smallW, smallH, 0, 0, width, height);
 
             ctx.save();
             if (shape === 'circle') {
@@ -219,7 +245,7 @@ class PhotoEditor {
                 ctx.arc(cx, cy, r, 0, Math.PI * 2);
                 ctx.clip();
             }
-            ctx.drawImage(this.tempCanvas, x, y);
+            ctx.drawImage(scaled, x, y);
             ctx.restore();
         } catch (e) {
             console.warn('Mosaic apply error', e);
@@ -282,21 +308,36 @@ class PhotoEditor {
         document.getElementById('saveVersionBtn').addEventListener('click', () => this.saveVersion());
         document.getElementById('commitBtn').addEventListener('click', () => this.commitEdit());
 
+        const exitBtn = document.getElementById('exitVersionPreviewBtn');
+        if (exitBtn) {
+            exitBtn.addEventListener('click', () => this.exitVersionPreview());
+        }
+
         this.canvas.addEventListener('mousedown', e => this.onCanvasMouseDown(e));
         this.canvas.addEventListener('mousemove', e => this.onCanvasMouseMove(e));
         this.canvas.addEventListener('mouseup', e => this.onCanvasMouseUp(e));
         this.canvas.addEventListener('mouseleave', e => this.onCanvasMouseUp(e));
 
+        this.bindVersionEvents();
+
+        window.addEventListener('resize', () => {
+            this.resetCanvasSize();
+            this.render();
+        });
+    }
+
+    bindVersionEvents() {
         document.querySelectorAll('.rollback-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 this.rollbackVersion(parseInt(btn.dataset.versionId));
             });
         });
-
-        window.addEventListener('resize', () => {
-            this.resetCanvasSize();
-            this.render();
+        document.querySelectorAll('.preview-version-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.previewVersion(parseInt(btn.dataset.versionId));
+            });
         });
     }
 
@@ -311,6 +352,7 @@ class PhotoEditor {
     }
 
     onCanvasMouseDown(e) {
+        if (this.previewVersionId !== null) return;
         const pt = this.getCanvasPoint(e);
 
         if (this.currentTool === 'crop') {
@@ -341,6 +383,7 @@ class PhotoEditor {
     }
 
     onCanvasMouseMove(e) {
+        if (this.previewVersionId !== null) return;
         const pt = this.getCanvasPoint(e);
 
         if (this.currentTool === 'crop' && this._cropDrag) {
@@ -360,6 +403,8 @@ class PhotoEditor {
     }
 
     onCanvasMouseUp(e) {
+        if (this.previewVersionId !== null) return;
+
         if (this.currentTool === 'crop' && this._cropDrag) {
             this._cropDrag = null;
             if (this.cropBox.width < 5 || this.cropBox.height < 5) {
@@ -445,7 +490,7 @@ class PhotoEditor {
         if (y < 0) { y = 0; }
         if (x + w > this.canvas.width) w = this.canvas.width - x;
         if (y + h > this.canvas.height) h = this.canvas.height - y;
-        if (ratio && w / h !== ratio) {
+        if (ratio && w > 0 && h > 0) {
             if (w / h > ratio) w = h * ratio; else h = w / ratio;
         }
 
@@ -456,6 +501,15 @@ class PhotoEditor {
     }
 
     setTool(tool) {
+        if (this.previewVersionId !== null && tool !== this.currentTool) {
+            this.showToast('请先退出版本预览', 'warning');
+            return;
+        }
+
+        if (this.previewOp) {
+            this.previewOp = null;
+        }
+
         this.currentTool = tool;
         document.querySelectorAll('.tool-btn').forEach(btn => {
             if (btn.dataset.tool === tool) {
@@ -492,12 +546,13 @@ class PhotoEditor {
         const tool = this.currentTool;
 
         if (tool === 'rotate') {
+            const defaultAngle = 0;
             container.innerHTML = `
-                <h4 class="font-medium text-sm mb-3">旋转</h4>
+                <h4 class="font-medium text-sm mb-3">旋转（拖动滑块实时预览）</h4>
                 <div class="space-y-3">
                     <div>
-                        <label class="text-xs text-gray-500 block mb-1">角度: <span id="angleValue">0</span>°</label>
-                        <input type="range" id="rotateSlider" min="-180" max="180" value="0" step="1" class="w-full">
+                        <label class="text-xs text-gray-500 block mb-1">角度: <span id="angleValue">${defaultAngle}</span>°</label>
+                        <input type="range" id="rotateSlider" min="-180" max="180" value="${defaultAngle}" step="1" class="w-full">
                     </div>
                     <div class="grid grid-cols-4 gap-2">
                         <button class="rotate-btn text-xs bg-gray-100 hover:bg-gray-200 py-1.5 rounded" data-angle="-90">-90°</button>
@@ -505,22 +560,44 @@ class PhotoEditor {
                         <button class="rotate-btn text-xs bg-gray-100 hover:bg-gray-200 py-1.5 rounded" data-angle="15">15°</button>
                         <button class="rotate-btn text-xs bg-gray-100 hover:bg-gray-200 py-1.5 rounded" data-angle="90">90°</button>
                     </div>
-                    <button id="applyRotate" class="w-full bg-primary hover:bg-blue-600 text-white py-2 rounded text-sm">应用旋转</button>
+                    <div class="flex gap-2">
+                        <button id="cancelRotate" class="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 rounded text-sm">取消</button>
+                        <button id="applyRotate" class="flex-1 bg-primary hover:bg-blue-600 text-white py-2 rounded text-sm">应用旋转</button>
+                    </div>
                 </div>
             `;
-            document.getElementById('rotateSlider').addEventListener('input', e => {
-                document.getElementById('angleValue').textContent = e.target.value;
+            const self = this;
+            document.getElementById('rotateSlider').addEventListener('input', function () {
+                const angle = parseInt(this.value) || 0;
+                document.getElementById('angleValue').textContent = angle;
+                if (angle === 0) {
+                    self.previewOp = null;
+                } else {
+                    self.previewOp = { type: 'rotate', params: { angle } };
+                }
+                self.render();
             });
             document.querySelectorAll('.rotate-btn').forEach(btn => {
-                btn.addEventListener('click', () => {
-                    document.getElementById('rotateSlider').value = parseInt(btn.dataset.angle);
-                    document.getElementById('angleValue').textContent = btn.dataset.angle;
+                btn.addEventListener('click', function () {
+                    const angle = parseInt(this.dataset.angle);
+                    document.getElementById('rotateSlider').value = angle;
+                    document.getElementById('angleValue').textContent = angle;
+                    self.previewOp = { type: 'rotate', params: { angle } };
+                    self.render();
                 });
             });
+            document.getElementById('cancelRotate').addEventListener('click', () => {
+                this.previewOp = null;
+                document.getElementById('rotateSlider').value = 0;
+                document.getElementById('angleValue').textContent = '0';
+                this.render();
+            });
             document.getElementById('applyRotate').addEventListener('click', () => {
-                const angle = parseInt(document.getElementById('rotateSlider').value) || 0;
-                if (angle !== 0) {
-                    this.addOperation('rotate', { angle });
+                if (this.previewOp && this.previewOp.type === 'rotate') {
+                    this.addOperation('rotate', { ...this.previewOp.params });
+                    this.previewOp = null;
+                    document.getElementById('rotateSlider').value = 0;
+                    document.getElementById('angleValue').textContent = '0';
                 }
             });
         } else if (tool === 'crop') {
@@ -539,35 +616,38 @@ class PhotoEditor {
                     <div class="text-xs text-gray-400">
                         当前: ${Math.round(this.cropBox.width)} × ${Math.round(this.cropBox.height)}px
                     </div>
-                    <button id="applyCrop" class="w-full bg-primary hover:bg-blue-600 text-white py-2 rounded text-sm">应用裁剪</button>
-                    <button id="resetCrop" class="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 rounded text-sm">重置裁剪框</button>
+                    <div class="flex gap-2">
+                        <button id="resetCrop" class="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 rounded text-sm">重置</button>
+                        <button id="applyCrop" class="flex-1 bg-primary hover:bg-blue-600 text-white py-2 rounded text-sm">应用裁剪</button>
+                    </div>
                 </div>
             `;
+            const self = this;
             document.querySelectorAll('.ratio-btn').forEach(btn => {
-                btn.addEventListener('click', () => {
+                btn.addEventListener('click', function () {
                     document.querySelectorAll('.ratio-btn').forEach(b => {
                         b.classList.remove('bg-primary', 'text-white');
                         b.classList.add('bg-gray-100');
                     });
-                    btn.classList.add('bg-primary', 'text-white');
-                    btn.classList.remove('bg-gray-100');
-                    const r = btn.dataset.ratio;
-                    this.cropBox.ratio = r === 'free' ? null : parseFloat(r);
-                    if (this.cropBox.ratio) {
-                        const area = this.cropBox.width * this.cropBox.height;
-                        const newH = Math.sqrt(area / this.cropBox.ratio);
-                        const newW = newH * this.cropBox.ratio;
-                        const cx = this.cropBox.x + this.cropBox.width / 2;
-                        const cy = this.cropBox.y + this.cropBox.height / 2;
-                        this.cropBox.width = Math.min(newW, this.canvas.width);
-                        this.cropBox.height = Math.min(newH, this.canvas.height);
-                        this.cropBox.x = Math.max(0, cx - this.cropBox.width / 2);
-                        this.cropBox.y = Math.max(0, cy - this.cropBox.height / 2);
-                        if (this.cropBox.x + this.cropBox.width > this.canvas.width) this.cropBox.x = this.canvas.width - this.cropBox.width;
-                        if (this.cropBox.y + this.cropBox.height > this.canvas.height) this.cropBox.y = this.canvas.height - this.cropBox.height;
+                    this.classList.add('bg-primary', 'text-white');
+                    this.classList.remove('bg-gray-100');
+                    const r = this.dataset.ratio;
+                    self.cropBox.ratio = r === 'free' ? null : parseFloat(r);
+                    if (self.cropBox.ratio) {
+                        const area = self.cropBox.width * self.cropBox.height;
+                        const newH = Math.sqrt(area / self.cropBox.ratio);
+                        const newW = newH * self.cropBox.ratio;
+                        const cx = self.cropBox.x + self.cropBox.width / 2;
+                        const cy = self.cropBox.y + self.cropBox.height / 2;
+                        self.cropBox.width = Math.min(newW, self.canvas.width);
+                        self.cropBox.height = Math.min(newH, self.canvas.height);
+                        self.cropBox.x = Math.max(0, cx - self.cropBox.width / 2);
+                        self.cropBox.y = Math.max(0, cy - self.cropBox.height / 2);
+                        if (self.cropBox.x + self.cropBox.width > self.canvas.width) self.cropBox.x = self.canvas.width - self.cropBox.width;
+                        if (self.cropBox.y + self.cropBox.height > self.canvas.height) self.cropBox.y = self.canvas.height - self.cropBox.height;
                     }
-                    this.render();
-                    this.updateToolSettings();
+                    self.render();
+                    self.updateToolSettings();
                 });
             });
             document.getElementById('applyCrop').addEventListener('click', () => {
@@ -594,67 +674,115 @@ class PhotoEditor {
                 this.updateToolSettings();
             });
         } else if (tool === 'brightness') {
+            const defaultVal = 100;
             container.innerHTML = `
-                <h4 class="font-medium text-sm mb-3">亮度</h4>
+                <h4 class="font-medium text-sm mb-3">亮度（拖动滑块实时预览）</h4>
                 <div class="space-y-3">
                     <div>
-                        <label class="text-xs text-gray-500 block mb-1">亮度: <span id="brightValue">100</span>%</label>
-                        <input type="range" id="brightSlider" min="0" max="200" value="100" step="1" class="w-full">
+                        <label class="text-xs text-gray-500 block mb-1">亮度: <span id="brightValue">${defaultVal}</span>%</label>
+                        <input type="range" id="brightSlider" min="0" max="200" value="${defaultVal}" step="1" class="w-full">
                     </div>
                     <div class="grid grid-cols-3 gap-2">
                         <button class="bright-btn text-xs bg-gray-100 hover:bg-gray-200 py-1.5 rounded" data-val="80">暗</button>
                         <button class="bright-btn text-xs bg-gray-100 hover:bg-gray-200 py-1.5 rounded" data-val="100">原</button>
                         <button class="bright-btn text-xs bg-gray-100 hover:bg-gray-200 py-1.5 rounded" data-val="130">亮</button>
                     </div>
-                    <button id="applyBright" class="w-full bg-primary hover:bg-blue-600 text-white py-2 rounded text-sm">应用亮度</button>
+                    <div class="flex gap-2">
+                        <button id="cancelBright" class="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 rounded text-sm">取消</button>
+                        <button id="applyBright" class="flex-1 bg-primary hover:bg-blue-600 text-white py-2 rounded text-sm">应用亮度</button>
+                    </div>
                 </div>
             `;
-            document.getElementById('brightSlider').addEventListener('input', e => {
-                document.getElementById('brightValue').textContent = e.target.value;
+            const self = this;
+            document.getElementById('brightSlider').addEventListener('input', function () {
+                const v = parseInt(this.value);
+                document.getElementById('brightValue').textContent = v;
+                const factor = v / 100;
+                if (Math.abs(factor - 1) < 0.001) {
+                    self.previewOp = null;
+                } else {
+                    self.previewOp = { type: 'brightness', params: { value: factor } };
+                }
+                self.render();
             });
             document.querySelectorAll('.bright-btn').forEach(btn => {
-                btn.addEventListener('click', () => {
-                    const v = parseInt(btn.dataset.val);
+                btn.addEventListener('click', function () {
+                    const v = parseInt(this.dataset.val);
                     document.getElementById('brightSlider').value = v;
                     document.getElementById('brightValue').textContent = v;
+                    const factor = v / 100;
+                    self.previewOp = Math.abs(factor - 1) < 0.001 ? null : { type: 'brightness', params: { value: factor } };
+                    self.render();
                 });
             });
+            document.getElementById('cancelBright').addEventListener('click', () => {
+                this.previewOp = null;
+                document.getElementById('brightSlider').value = 100;
+                document.getElementById('brightValue').textContent = '100';
+                this.render();
+            });
             document.getElementById('applyBright').addEventListener('click', () => {
-                const val = parseInt(document.getElementById('brightSlider').value) / 100;
-                if (Math.abs(val - 1) > 0.001) {
-                    this.addOperation('brightness', { value: val });
+                if (this.previewOp && this.previewOp.type === 'brightness') {
+                    this.addOperation('brightness', { ...this.previewOp.params });
+                    this.previewOp = null;
+                    document.getElementById('brightSlider').value = 100;
+                    document.getElementById('brightValue').textContent = '100';
                 }
             });
         } else if (tool === 'contrast') {
+            const defaultVal = 100;
             container.innerHTML = `
-                <h4 class="font-medium text-sm mb-3">对比度</h4>
+                <h4 class="font-medium text-sm mb-3">对比度（拖动滑块实时预览）</h4>
                 <div class="space-y-3">
                     <div>
-                        <label class="text-xs text-gray-500 block mb-1">对比度: <span id="contrastValue">100</span>%</label>
-                        <input type="range" id="contrastSlider" min="0" max="200" value="100" step="1" class="w-full">
+                        <label class="text-xs text-gray-500 block mb-1">对比度: <span id="contrastValue">${defaultVal}</span>%</label>
+                        <input type="range" id="contrastSlider" min="0" max="200" value="${defaultVal}" step="1" class="w-full">
                     </div>
                     <div class="grid grid-cols-3 gap-2">
                         <button class="contrast-btn text-xs bg-gray-100 hover:bg-gray-200 py-1.5 rounded" data-val="70">低</button>
                         <button class="contrast-btn text-xs bg-gray-100 hover:bg-gray-200 py-1.5 rounded" data-val="100">原</button>
                         <button class="contrast-btn text-xs bg-gray-100 hover:bg-gray-200 py-1.5 rounded" data-val="150">高</button>
                     </div>
-                    <button id="applyContrast" class="w-full bg-primary hover:bg-blue-600 text-white py-2 rounded text-sm">应用对比度</button>
+                    <div class="flex gap-2">
+                        <button id="cancelContrast" class="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 rounded text-sm">取消</button>
+                        <button id="applyContrast" class="flex-1 bg-primary hover:bg-blue-600 text-white py-2 rounded text-sm">应用对比度</button>
+                    </div>
                 </div>
             `;
-            document.getElementById('contrastSlider').addEventListener('input', e => {
-                document.getElementById('contrastValue').textContent = e.target.value;
+            const self = this;
+            document.getElementById('contrastSlider').addEventListener('input', function () {
+                const v = parseInt(this.value);
+                document.getElementById('contrastValue').textContent = v;
+                const factor = v / 100;
+                if (Math.abs(factor - 1) < 0.001) {
+                    self.previewOp = null;
+                } else {
+                    self.previewOp = { type: 'contrast', params: { value: factor } };
+                }
+                self.render();
             });
             document.querySelectorAll('.contrast-btn').forEach(btn => {
-                btn.addEventListener('click', () => {
-                    const v = parseInt(btn.dataset.val);
+                btn.addEventListener('click', function () {
+                    const v = parseInt(this.dataset.val);
                     document.getElementById('contrastSlider').value = v;
                     document.getElementById('contrastValue').textContent = v;
+                    const factor = v / 100;
+                    self.previewOp = Math.abs(factor - 1) < 0.001 ? null : { type: 'contrast', params: { value: factor } };
+                    self.render();
                 });
             });
+            document.getElementById('cancelContrast').addEventListener('click', () => {
+                this.previewOp = null;
+                document.getElementById('contrastSlider').value = 100;
+                document.getElementById('contrastValue').textContent = '100';
+                this.render();
+            });
             document.getElementById('applyContrast').addEventListener('click', () => {
-                const val = parseInt(document.getElementById('contrastSlider').value) / 100;
-                if (Math.abs(val - 1) > 0.001) {
-                    this.addOperation('contrast', { value: val });
+                if (this.previewOp && this.previewOp.type === 'contrast') {
+                    this.addOperation('contrast', { ...this.previewOp.params });
+                    this.previewOp = null;
+                    document.getElementById('contrastSlider').value = 100;
+                    document.getElementById('contrastValue').textContent = '100';
                 }
             });
         } else if (tool === 'mosaic-rect' || tool === 'mosaic-circle') {
@@ -664,14 +792,15 @@ class PhotoEditor {
                 <div class="space-y-3">
                     <p class="text-xs text-gray-500">在图片上按住鼠标拖动画出打码区域</p>
                     <div>
-                        <label class="text-xs text-gray-500 block mb-1">像素块大小: <span id="cellValue">15</span>px</label>
-                        <input type="range" id="cellSlider" min="5" max="50" value="15" step="1" class="w-full">
+                        <label class="text-xs text-gray-500 block mb-1">像素块大小: <span id="cellValue">${this._mosaicCellSize}</span>px</label>
+                        <input type="range" id="cellSlider" min="5" max="50" value="${this._mosaicCellSize}" step="1" class="w-full">
                     </div>
                 </div>
             `;
-            document.getElementById('cellSlider').addEventListener('input', e => {
-                document.getElementById('cellValue').textContent = e.target.value;
-                this._mosaicCellSize = parseInt(e.target.value);
+            const self = this;
+            document.getElementById('cellSlider').addEventListener('input', function () {
+                document.getElementById('cellValue').textContent = this.value;
+                self._mosaicCellSize = parseInt(this.value);
             });
         } else {
             container.innerHTML = '<p class="text-sm text-gray-400 text-center py-4">选择上方工具进行调整</p>';
@@ -685,6 +814,16 @@ class PhotoEditor {
     }
 
     undo() {
+        if (this.previewVersionId !== null) {
+            this.showToast('请先退出版本预览', 'warning');
+            return;
+        }
+        if (this.previewOp) {
+            this.previewOp = null;
+            this.updateToolSettings();
+            this.render();
+            return;
+        }
         if (this.operations.length > 0) {
             this.operations.pop();
             this.updateOperationsList();
@@ -694,7 +833,7 @@ class PhotoEditor {
 
     updateUndoState() {
         const btn = document.getElementById('undoBtn');
-        if (btn) btn.disabled = this.operations.length === 0;
+        if (btn) btn.disabled = (this.operations.length === 0 && !this.previewOp);
     }
 
     updateOperationsList() {
@@ -719,6 +858,7 @@ class PhotoEditor {
         `).join('');
         container.querySelectorAll('.undo-one').forEach(btn => {
             btn.addEventListener('click', () => {
+                if (this.previewVersionId !== null) return;
                 const idx = parseInt(btn.dataset.idx);
                 this.operations.splice(idx, 1);
                 this.updateOperationsList();
@@ -745,6 +885,10 @@ class PhotoEditor {
     }
 
     async saveVersion() {
+        if (this.previewVersionId !== null) {
+            this.showToast('请先退出版本预览', 'warning');
+            return;
+        }
         const { value: label } = await Swal.fire({
             title: '保存版本',
             input: 'text',
@@ -775,6 +919,7 @@ class PhotoEditor {
             });
             const data = await r.json();
             if (data.success) {
+                this.versionsCache[data.version.id] = data.version;
                 this.showToast('版本已保存', 'success');
                 this.refreshVersionsList();
             } else {
@@ -795,31 +940,105 @@ class PhotoEditor {
                     container.innerHTML = '<p class="text-xs text-gray-400 text-center py-4">暂无历史版本</p>';
                     return;
                 }
+                data.versions.forEach(v => {
+                    this.versionsCache[v.id] = v;
+                });
                 container.innerHTML = data.versions.map(v => `
-                    <div class="version-item p-2 rounded-lg border border-gray-100 hover:bg-gray-50 transition cursor-pointer" data-version-id="${v.id}">
-                        <div class="flex items-center justify-between">
+                    <div class="version-item p-2 rounded-lg border border-gray-100 hover:bg-gray-50 transition ${this.previewVersionId === v.id ? 'bg-amber-50 border-amber-200' : ''}" data-version-id="${v.id}">
+                        <div class="flex items-start gap-2">
+                            ${v.thumbnail
+                                ? `<div class="w-12 h-12 flex-shrink-0 rounded overflow-hidden bg-gray-100 border border-gray-200">
+                                     <img src="${v.thumbnail}" class="w-full h-full object-cover version-thumb">
+                                   </div>`
+                                : `<div class="w-12 h-12 flex-shrink-0 rounded bg-gray-100 border border-gray-200 flex items-center justify-center">
+                                     <svg class="w-6 h-6 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                                   </div>`}
                             <div class="flex-1 min-w-0">
                                 <div class="text-sm font-medium text-gray-800 truncate">${v.label}</div>
                                 <div class="text-xs text-gray-400">${v.created_at}</div>
+                                <div class="flex items-center gap-2 mt-1">
+                                    <button class="preview-version-btn text-xs text-blue-500 hover:text-blue-700 hover:underline ${this.previewVersionId === v.id ? 'font-bold' : ''}" data-version-id="${v.id}">
+                                        ${this.previewVersionId === v.id ? '当前预览中' : '预览'}
+                                    </button>
+                                    <span class="text-gray-200">|</span>
+                                    <button class="rollback-btn text-xs text-primary hover:underline" data-version-id="${v.id}">回滚</button>
+                                </div>
                             </div>
-                            <button class="rollback-btn text-xs text-primary hover:underline flex-shrink-0 ml-2" data-version-id="${v.id}">回滚</button>
                         </div>
                     </div>
                 `).join('');
-                container.querySelectorAll('.rollback-btn').forEach(btn => {
-                    btn.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        this.rollbackVersion(parseInt(btn.dataset.versionId));
-                    });
-                });
+                this.bindVersionEvents();
             }
         } catch (e) {}
     }
 
+    previewVersion(versionId) {
+        if (this.previewVersionId === versionId) return;
+
+        if (this.previewOp) {
+            this.previewOp = null;
+            this.updateToolSettings();
+        }
+
+        const version = this.versionsCache[versionId];
+        if (!version) {
+            this.showToast('版本数据未找到', 'error');
+            return;
+        }
+
+        if (this.previewVersionId === null) {
+            this.savedOperationsBeforePreview = [...this.operations];
+            this.savedPreviewOpBeforePreview = this.previewOp;
+        }
+
+        this.previewVersionId = versionId;
+        this.operations = version.operations || [];
+
+        const banner = document.getElementById('versionPreviewBanner');
+        if (banner) {
+            banner.classList.remove('hidden');
+            banner.classList.add('flex');
+        }
+        const nameEl = document.getElementById('previewVersionName');
+        if (nameEl) nameEl.textContent = version.label || `版本 ${versionId}`;
+
+        this.updateOperationsList();
+        this.refreshVersionsList();
+        this.render();
+    }
+
+    exitVersionPreview() {
+        if (this.previewVersionId === null) return;
+
+        if (this.savedOperationsBeforePreview !== null) {
+            this.operations = this.savedOperationsBeforePreview;
+        }
+        if (this.savedPreviewOpBeforePreview !== null) {
+            this.previewOp = this.savedPreviewOpBeforePreview;
+        }
+
+        this.previewVersionId = null;
+        this.savedOperationsBeforePreview = null;
+        this.savedPreviewOpBeforePreview = null;
+
+        const banner = document.getElementById('versionPreviewBanner');
+        if (banner) {
+            banner.classList.add('hidden');
+            banner.classList.remove('flex');
+        }
+
+        this.updateOperationsList();
+        this.refreshVersionsList();
+        this.updateToolSettings();
+        this.render();
+        this.showToast('已退出版本预览，恢复当前编辑', 'success');
+    }
+
     async rollbackVersion(versionId) {
+        const version = this.versionsCache[versionId];
         const result = await Swal.fire({
             title: '回滚到该版本？',
-            text: '当前编辑操作将被替换为该版本的操作序列',
+            html: `将使用版本「<b>${version ? version.label : versionId}</b>」的操作序列替换当前编辑<br><span class="text-amber-600 text-xs">（如需先看看效果请点「预览」按钮）</span>`,
             icon: 'question',
             showCancelButton: true,
             confirmButtonText: '确定回滚',
@@ -836,7 +1055,20 @@ class PhotoEditor {
             const data = await r.json();
             if (data.success) {
                 this.operations = data.operations || [];
+                this.previewOp = null;
+                this.previewVersionId = null;
+                this.savedOperationsBeforePreview = null;
+                this.savedPreviewOpBeforePreview = null;
+
+                const banner = document.getElementById('versionPreviewBanner');
+                if (banner) {
+                    banner.classList.add('hidden');
+                    banner.classList.remove('flex');
+                }
+
                 this.updateOperationsList();
+                this.refreshVersionsList();
+                this.updateToolSettings();
                 this.render();
                 this.showToast('已回滚到该版本', 'success');
             } else {
@@ -848,6 +1080,41 @@ class PhotoEditor {
     }
 
     async commitEdit() {
+        if (this.previewVersionId !== null) {
+            const r = await Swal.fire({
+                title: '正在预览历史版本',
+                text: '请先退出版本预览后再保存，确认退出预览并保存当前编辑？',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonText: '退出预览并保存',
+                cancelButtonText: '取消',
+                confirmButtonColor: '#3b82f6'
+            });
+            if (!r.isConfirmed) return;
+            this.exitVersionPreview();
+        }
+
+        if (this.previewOp) {
+            const r = await Swal.fire({
+                title: '有未应用的调整',
+                text: '当前预览中的调整还未加入操作列表，是否先应用后保存？',
+                showDenyButton: true,
+                showCancelButton: true,
+                confirmButtonText: '应用并保存',
+                denyButtonText: '丢弃调整，直接保存',
+                cancelButtonText: '取消',
+                confirmButtonColor: '#3b82f6'
+            });
+            if (r.isConfirmed) {
+                this.addOperation(this.previewOp.type, { ...this.previewOp.params });
+                this.previewOp = null;
+            } else if (r.isDenied) {
+                this.previewOp = null;
+            } else {
+                return;
+            }
+        }
+
         const result = await Swal.fire({
             title: '确认保存编辑结果？',
             text: '将合成编辑结果并覆盖原始图片文件，原图备份保留',
