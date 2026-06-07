@@ -32,6 +32,9 @@
             --radius-full: 9999px;
             --font-scale: 1;
         }
+        html {
+            font-size: calc(16px * var(--font-scale));
+        }
     </style>
     <script>
         tailwind.config = {
@@ -47,7 +50,7 @@
     </script>
     <script src="{{ url_for('static', filename='js/theme-system.js') }}"></script>
 </head>
-<body class="min-h-screen flex flex-col" style="background-color: var(--color-bg); color: var(--color-text); font-size: calc(16px * var(--font-scale));">
+<body class="min-h-screen flex flex-col" style="background-color: var(--color-bg); color: var(--color-text);">
 
     <!-- 导航栏 -->
     <nav class="sticky top-0 z-50 border-b" style="background-color: var(--color-nav-bg); border-color: var(--color-nav-border); box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05);">

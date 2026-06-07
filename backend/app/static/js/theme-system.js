@@ -119,6 +119,7 @@
         const accent = ACCENT_COLORS[settings.accent] || ACCENT_COLORS.blue;
 
         const root = document.documentElement;
+        const body = document.body;
 
         Object.keys(baseVars).forEach(key => {
             root.style.setProperty(key, baseVars[key]);
@@ -128,6 +129,7 @@
         root.style.setProperty('--color-accent-hover', accent.hover);
         root.style.setProperty('--color-accent-light', accent.light);
 
+        let fontScale = 1;
         if (settings.custom) {
             if (settings.custom['--color-bg']) {
                 root.style.setProperty('--color-bg', settings.custom['--color-bg']);
@@ -147,15 +149,19 @@
                 root.style.setProperty('--radius-lg', (parseInt(r) + 4) + 'px');
             }
             if (settings.custom['--font-scale']) {
+                fontScale = parseFloat(settings.custom['--font-scale']) || 1;
                 root.style.setProperty('--font-scale', settings.custom['--font-scale']);
             }
         }
+
+        root.style.fontSize = (16 * fontScale) + 'px';
 
         updateThemeIcon(effectiveMode, settings.mode);
         updateActiveModeUI(settings.mode);
         updateActiveAccentUI(settings.accent);
         updateWorkshopUI(settings);
         applyViewerOverrides(effectiveMode);
+        applyGlobalClassOverrides(effectiveMode);
     }
 
     function updateThemeIcon(effectiveMode, rawMode) {
@@ -226,6 +232,91 @@
             const s = parseFloat(settings.custom?.['--font-scale'] || '1');
             fontInput.value = Math.round(s * 100);
             fontValue.textContent = Math.round(s * 100) + '%';
+        }
+    }
+
+    function applyGlobalClassOverrides(effectiveMode) {
+        let styleEl = document.getElementById('global-theme-class-overrides');
+        if (!styleEl) {
+            styleEl = document.createElement('style');
+            styleEl.id = 'global-theme-class-overrides';
+            document.head.appendChild(styleEl);
+        }
+        if (effectiveMode === 'dark') {
+            styleEl.textContent = `
+                .bg-white { background-color: var(--color-card) !important; }
+                .bg-gray-50 { background-color: var(--color-card) !important; }
+                .bg-gray-100 { background-color: var(--color-card-border) !important; }
+                .bg-gray-200 { background-color: var(--color-card-border) !important; }
+                .bg-blue-50 { background-color: rgba(59, 130, 246, 0.15) !important; }
+                .bg-green-50 { background-color: rgba(16, 185, 129, 0.15) !important; }
+                .bg-purple-50 { background-color: rgba(139, 92, 246, 0.15) !important; }
+                .bg-amber-50 { background-color: rgba(245, 158, 11, 0.15) !important; }
+                .bg-indigo-50 { background-color: rgba(99, 102, 241, 0.15) !important; }
+                .bg-gradient-to-r.from-amber-50.to-yellow-50 { background-image: linear-gradient(to right, rgba(245,158,11,0.2), rgba(234,179,8,0.2)) !important; }
+                .bg-gradient-to-r.from-indigo-50.to-purple-50 { background-image: linear-gradient(to right, rgba(99,102,241,0.2), rgba(139,92,246,0.2)) !important; }
+                .bg-gradient-to-br.from-yellow-100.to-amber-100 { background-image: linear-gradient(to bottom right, rgba(250,204,21,0.2), rgba(251,191,36,0.2)) !important; }
+                .bg-gradient-to-br.from-blue-100.to-indigo-100 { background-image: linear-gradient(to bottom right, rgba(147,197,253,0.2), rgba(165,180,252,0.2)) !important; }
+                .text-gray-900 { color: var(--color-text) !important; }
+                .text-gray-800 { color: var(--color-text) !important; }
+                .text-gray-700 { color: var(--color-text) !important; }
+                .text-gray-600 { color: var(--color-text-secondary) !important; }
+                .text-gray-500 { color: var(--color-text-secondary) !important; }
+                .text-gray-400 { color: var(--color-text-muted) !important; }
+                .text-gray-300 { color: var(--color-text-muted) !important; }
+                .text-blue-600 { color: var(--color-accent) !important; }
+                .text-green-600 { color: var(--color-success) !important; }
+                .text-purple-600 { color: #a78bfa !important; }
+                .text-blue-700 { color: var(--color-accent-hover) !important; }
+                .text-amber-700 { color: #fbbf24 !important; }
+                .text-indigo-600 { color: #a5b4fc !important; }
+                .text-indigo-800 { color: #c7d2fe !important; }
+                .border-gray-100 { border-color: var(--color-card-border) !important; }
+                .border-gray-200 { border-color: var(--color-card-border) !important; }
+                .border-gray-300 { border-color: var(--color-card-border) !important; }
+                .border-blue-200 { border-color: rgba(59,130,246,0.4) !important; }
+                .border-green-200 { border-color: rgba(16,185,129,0.4) !important; }
+                .border-purple-200 { border-color: rgba(139,92,246,0.4) !important; }
+                .border-indigo-100 { border-color: rgba(99,102,241,0.3) !important; }
+                .border-indigo-200 { border-color: rgba(99,102,241,0.4) !important; }
+                .border-amber-200 { border-color: rgba(245,158,11,0.4) !important; }
+                .border-amber-100 { border-color: rgba(245,158,11,0.3) !important; }
+                .divide-gray-100 > :not([hidden]) ~ :not([hidden]) { border-color: var(--color-card-border) !important; }
+                .divide-gray-200 > :not([hidden]) ~ :not([hidden]) { border-color: var(--color-card-border) !important; }
+                .shadow-sm { box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.3) !important; }
+                .shadow { box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.4), 0 1px 2px -1px rgba(0, 0, 0, 0.3) !important; }
+                .shadow-md { box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -2px rgba(0, 0, 0, 0.3) !important; }
+                .shadow-lg { box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -4px rgba(0, 0, 0, 0.4) !important; }
+                .shadow-xl { box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.4) !important; }
+                .shadow-2xl { box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6) !important; }
+                .ring-gray-100 { --tw-ring-color: var(--color-card-border) !important; }
+                .ring-gray-200 { --tw-ring-color: var(--color-card-border) !important; }
+                .hover\:bg-gray-50:hover { background-color: var(--color-card-border) !important; }
+                .hover\:bg-gray-100:hover { background-color: rgba(255,255,255,0.06) !important; }
+                .hover\:bg-gray-50\/50:hover { background-color: rgba(255,255,255,0.04) !important; }
+                .hover\:text-gray-800:hover { color: var(--color-text) !important; }
+                .hover\:text-gray-900:hover { color: var(--color-text) !important; }
+                .placeholder\:text-gray-400::placeholder { color: var(--color-text-muted) !important; }
+                .bg-white\/80 { background-color: rgba(31, 41, 55, 0.8) !important; }
+                .bg-white\/60 { background-color: rgba(31, 41, 55, 0.6) !important; }
+                .bg-black\/40 { background-color: rgba(0, 0, 0, 0.6) !important; }
+                .backdrop-blur-md { --tw-backdrop-blur: blur(12px); }
+                input[type="color"] { background-color: var(--color-card) !important; }
+                select, input, textarea {
+                    background-color: var(--color-card) !important;
+                    color: var(--color-text) !important;
+                    border-color: var(--color-card-border) !important;
+                }
+                select:focus, input:focus, textarea:focus {
+                    border-color: var(--color-accent) !important;
+                    box-shadow: 0 0 0 1px var(--color-accent) !important;
+                }
+                table { color: var(--color-text) !important; }
+                th { color: var(--color-text-secondary) !important; }
+                tr:nth-child(even) td { background-color: rgba(255,255,255,0.02); }
+            `;
+        } else {
+            styleEl.textContent = '';
         }
     }
 
