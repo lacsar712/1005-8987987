@@ -1,6 +1,7 @@
 import os
 import uuid
-from flask import Blueprint, request, jsonify, render_template, send_file, current_app
+import traceback
+from flask import Blueprint, request, jsonify, render_template, send_file, send_from_directory, current_app
 from flask_login import login_required
 from werkzeug.utils import secure_filename
 from ..db import Album, WatermarkConfig
@@ -13,10 +14,22 @@ watermark_bp = Blueprint('watermark', __name__, url_prefix='/watermark')
 
 ALLOWED_WATERMARK_EXTENSIONS = {'png'}
 
+_batch_processor_singleton = None
+
+
+def _get_watermarks_dir():
+    uploads_dir = current_app.config['UPLOAD_FOLDER']
+    return os.path.join(os.path.dirname(uploads_dir), 'watermarks')
+
 
 def _get_batch_processor():
-    uploads = current_app.config['UPLOAD_FOLDER']
-    return WatermarkBatchProcessor(uploads)
+    global _batch_processor_singleton
+    if _batch_processor_singleton is None:
+        _batch_processor_singleton = WatermarkBatchProcessor.get_instance(
+            uploads_folder=current_app.config['UPLOAD_FOLDER'],
+            flask_app=current_app._get_current_object(),
+        )
+    return _batch_processor_singleton
 
 
 def _get_processor():
@@ -53,56 +66,71 @@ def api_update_config():
     return jsonify({'success': True, 'config': config.to_dict()})
 
 
+@watermark_bp.route('/static/watermarks/<path:filename>')
+def serve_watermark_image(filename):
+    """提供水印图片静态访问"""
+    try:
+        return send_from_directory(_get_watermarks_dir(), filename)
+    except Exception:
+        return ('', 404)
+
+
 @watermark_bp.route('/api/preview', methods=['GET', 'POST'])
 def api_generate_preview():
     """根据当前参数生成预览图"""
-    if request.method == 'POST':
-        data = request.get_json() or {}
-    else:
-        data = {}
+    try:
+        if request.method == 'POST':
+            data = request.get_json(silent=True) or {}
+        else:
+            data = {}
 
-    config = WatermarkConfigService.get_config()
-    temp_config = WatermarkConfig()
-    for key, value in config.to_dict().items():
-        if hasattr(temp_config, key):
-            setattr(temp_config, key, value)
+        config = WatermarkConfigService.get_config()
+        temp_config = WatermarkConfig()
+        for key, value in config.to_dict().items():
+            if hasattr(temp_config, key):
+                setattr(temp_config, key, value)
 
-    boolean_fields = {'text_tiling', 'text_stroke', 'image_tiling', 'adaptive_contrast'}
-    float_fields = {'text_opacity', 'image_opacity', 'image_scale'}
-    int_fields = {'text_font_size', 'text_tiling_spacing', 'text_tiling_angle',
-                  'text_stroke_width', 'image_tiling_spacing', 'image_tiling_angle'}
+        boolean_fields = {'text_tiling', 'text_stroke', 'image_tiling', 'adaptive_contrast'}
+        float_fields = {'text_opacity', 'image_opacity', 'image_scale'}
+        int_fields = {'text_font_size', 'text_tiling_spacing', 'text_tiling_angle',
+                      'text_stroke_width', 'image_tiling_spacing', 'image_tiling_angle'}
 
-    for field in [
-        'watermark_type', 'text_content', 'text_font_size', 'text_opacity',
-        'text_color', 'text_position', 'text_tiling', 'text_tiling_spacing',
-        'text_tiling_angle', 'text_stroke', 'text_stroke_color', 'text_stroke_width',
-        'image_scale', 'image_opacity', 'image_position', 'image_tiling',
-        'image_tiling_spacing', 'image_tiling_angle', 'adaptive_contrast'
-    ]:
-        if field in data:
-            if field in boolean_fields:
-                setattr(temp_config, field, bool(data[field]))
-            elif field in float_fields:
-                try:
-                    setattr(temp_config, field, float(data[field]))
-                except (ValueError, TypeError):
-                    pass
-            elif field in int_fields:
-                try:
-                    setattr(temp_config, field, int(data[field]))
-                except (ValueError, TypeError):
-                    pass
-            else:
-                setattr(temp_config, field, data[field])
+        for field in [
+            'watermark_type', 'text_content', 'text_font_size', 'text_opacity',
+            'text_color', 'text_position', 'text_tiling', 'text_tiling_spacing',
+            'text_tiling_angle', 'text_stroke', 'text_stroke_color', 'text_stroke_width',
+            'image_scale', 'image_opacity', 'image_position', 'image_tiling',
+            'image_tiling_spacing', 'image_tiling_angle', 'adaptive_contrast'
+        ]:
+            if field in data:
+                if field in boolean_fields:
+                    setattr(temp_config, field, bool(data[field]))
+                elif field in float_fields:
+                    try:
+                        setattr(temp_config, field, float(data[field]))
+                    except (ValueError, TypeError):
+                        pass
+                elif field in int_fields:
+                    try:
+                        setattr(temp_config, field, int(data[field]))
+                    except (ValueError, TypeError):
+                        pass
+                else:
+                    setattr(temp_config, field, data[field])
 
-    temp_config.enabled = True
-    processor = _get_processor()
-    buffer = processor.generate_preview(
-        temp_config,
-        effective_text=data.get('text_content'),
-        effective_position=data.get('text_position') or data.get('image_position'),
-    )
-    return send_file(buffer, mimetype='image/jpeg', cache_timeout=0)
+        temp_config.enabled = True
+        processor = _get_processor()
+        eff_text = data.get('text_content') if data.get('text_content') else None
+        eff_pos = data.get('text_position') or data.get('image_position') or None
+        buffer = processor.generate_preview(
+            temp_config,
+            effective_text=eff_text,
+            effective_position=eff_pos,
+        )
+        return send_file(buffer, mimetype='image/jpeg', cache_timeout=0)
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({'success': False, 'message': str(e)}), 500
 
 
 @watermark_bp.route('/api/image/upload', methods=['POST'])
@@ -196,33 +224,70 @@ def api_remove_override(album_id):
 @login_required
 def api_batch_status():
     """获取批量补打任务状态"""
-    processor = _get_batch_processor()
-    task = processor.get_latest_task()
-    running = processor.is_running()
-    return jsonify({
-        'task': task.to_dict() if task else None,
-        'is_running': running,
-    })
+    try:
+        processor = _get_batch_processor()
+        if processor is None:
+            return jsonify({'task': None, 'is_running': False})
+        task = processor.get_latest_task()
+        running = processor.is_running()
+        return jsonify({
+            'task': task.to_dict() if task else None,
+            'is_running': running,
+        })
+    except Exception as e:
+        return jsonify({'task': None, 'is_running': False, 'error': str(e)})
 
 
 @watermark_bp.route('/api/batch/start', methods=['POST'])
 @login_required
 def api_start_batch():
     """启动批量补打任务"""
-    processor = _get_batch_processor()
-    if processor.is_running():
-        return jsonify({'success': False, 'message': '已有任务正在运行'}), 400
+    try:
+        global_config = WatermarkConfigService.get_config()
+        if not global_config.enabled:
+            return jsonify({
+                'success': False,
+                'message': '全局水印开关未开启，请先启用水印再批量补打',
+                'code': 'watermark_disabled'
+            }), 400
 
-    data = request.get_json() or {}
-    album_id = data.get('album_id')
-    if album_id is not None:
-        try:
-            album_id = int(album_id)
-        except (ValueError, TypeError):
-            album_id = None
+        processor = _get_batch_processor()
+        if processor is None:
+            return jsonify({
+                'success': False,
+                'message': '任务处理器初始化失败，请刷新页面重试'
+            }), 500
 
-    task = processor.start_task(album_id=album_id)
-    if task:
-        return jsonify({'success': True, 'task': task.to_dict()})
-    else:
-        return jsonify({'success': False, 'message': '没有可处理的照片或已有任务运行中'}), 400
+        if processor.is_running():
+            return jsonify({
+                'success': False,
+                'message': '已有任务正在运行，请等待完成'
+            }), 400
+
+        data = request.get_json(silent=True) or {}
+        album_id = data.get('album_id')
+        if album_id is not None:
+            try:
+                album_id = int(album_id)
+            except (ValueError, TypeError):
+                album_id = None
+
+        task = processor.start_task(album_id=album_id)
+        if task:
+            return jsonify({'success': True, 'task': task.to_dict()})
+        else:
+            if not processor.is_running():
+                return jsonify({
+                    'success': False,
+                    'message': '没有可处理的照片，请先上传照片'
+                }), 400
+            return jsonify({
+                'success': False,
+                'message': '任务启动失败，请稍后重试'
+            }), 500
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'message': f'任务启动失败：{str(e)}'
+        }), 500

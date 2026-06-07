@@ -227,6 +227,11 @@
                     </div>
                 </div>
 
+                <div id="batch-watermark-disabled-hint" class="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800 flex items-start gap-2 hidden">
+                    <svg class="w-5 h-5 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                    <span>全局水印开关当前为<strong>关闭</strong>状态，批量补打不会有任何效果。请先在页面顶部启用水印。</span>
+                </div>
+
                 <div class="flex flex-col sm:flex-row gap-3">
                     <div class="flex-1">
                         <select id="batch-album-select" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none transition">
@@ -438,15 +443,28 @@
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(data),
-            }).then(r => r.blob()).then(blob => {
+            }).then(r => {
+                if (!r.ok) {
+                    throw new Error('Preview generation failed: ' + r.status);
+                }
+                const ct = r.headers.get('Content-Type') || '';
+                if (ct.indexOf('application/json') !== -1) {
+                    return r.json().then(d => { throw new Error(d.message || '预览生成失败'); });
+                }
+                return r.blob();
+            }).then(blob => {
                 const url = URL.createObjectURL(blob);
                 const img = document.getElementById('preview-image');
                 img.onload = () => {
                     URL.revokeObjectURL(url);
                     document.getElementById('preview-loading').classList.add('hidden');
                 };
+                img.onerror = () => {
+                    document.getElementById('preview-loading').classList.add('hidden');
+                };
                 img.src = url;
-            }).catch(() => {
+            }).catch((err) => {
+                console.warn('Preview error:', err);
                 document.getElementById('preview-loading').classList.add('hidden');
             });
         }, 250);
@@ -753,6 +771,17 @@
     async function startBatchTask() {
         const albumId = document.getElementById('batch-album-select').value;
 
+        if (!document.getElementById('global-toggle').checked) {
+            Swal.fire({
+                title: '全局水印未开启',
+                text: '请先在页面顶部开启「全局水印开关」，再进行批量补打。',
+                icon: 'warning',
+                confirmButtonColor: '#3b82f6',
+                confirmButtonText: '我知道了'
+            });
+            return;
+        }
+
         Swal.fire({
             title: '确认批量补打水印？',
             text: albumId ? '将对所选相册的所有历史照片重新应用水印。' : '将对所有相册的历史照片重新应用水印。此操作将覆盖磁盘文件，建议先备份。',
@@ -770,7 +799,12 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ album_id: albumId ? parseInt(albumId) : null }),
                 });
-                const data = await r.json();
+                let data = {};
+                try {
+                    data = await r.json();
+                } catch {
+                    data = { success: r.ok, message: r.ok ? '任务已启动' : '服务器返回错误' };
+                }
                 if (data.success) {
                     showToast('批量补打任务已启动');
                     if (!batchPollTimer) {
@@ -778,10 +812,20 @@
                     }
                     checkBatchStatus();
                 } else {
-                    showToast(data.message || '启动失败', 'error');
+                    if (data.code === 'watermark_disabled') {
+                        Swal.fire({
+                            title: '全局水印未开启',
+                            text: data.message,
+                            icon: 'warning',
+                            confirmButtonColor: '#3b82f6',
+                        });
+                    } else {
+                        showToast(data.message || '启动失败', 'error');
+                    }
                 }
-            } catch {
-                showToast('网络错误', 'error');
+            } catch (e) {
+                console.error('Batch start error:', e);
+                showToast('网络错误或服务器无响应', 'error');
             }
         });
     }
@@ -870,7 +914,23 @@
             document.getElementById('image-placeholder').classList.add('hidden');
             document.getElementById('image-preview-container').classList.remove('hidden');
             const ts = Date.now();
-            document.getElementById('current-watermark-preview').src = `/static/watermarks/${cfg.image_filename}?t=${ts}`;
+            document.getElementById('current-watermark-preview').src = `/watermark/static/watermarks/${cfg.image_filename}?t=${ts}`;
+        }
+        updateBatchButtonState();
+    }
+
+    function updateBatchButtonState() {
+        const enabled = document.getElementById('global-toggle').checked;
+        const btn = document.getElementById('batch-start-btn');
+        const hint = document.getElementById('batch-watermark-disabled-hint');
+        if (!enabled) {
+            btn.disabled = true;
+            btn.classList.add('opacity-50', 'cursor-not-allowed');
+            hint.classList.remove('hidden');
+        } else {
+            btn.disabled = false;
+            btn.classList.remove('opacity-50', 'cursor-not-allowed');
+            hint.classList.add('hidden');
         }
     }
 
@@ -924,6 +984,9 @@
             document.getElementById(id).addEventListener('change', () => {
                 updateSummary();
                 refreshPreview();
+                if (id === 'global-toggle') {
+                    updateBatchButtonState();
+                }
                 if (id === 'tiling-toggle') {
                     document.getElementById('tiling-options').classList.toggle('hidden', !document.getElementById('tiling-toggle').checked);
                     document.getElementById('position-picker').classList.toggle('hidden', document.getElementById('tiling-toggle').checked);
