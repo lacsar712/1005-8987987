@@ -5,6 +5,10 @@ class TimelineRenderer {
         this.totalCountEl = options.totalCountEl;
         this.data = options.initialData || { groups: {}, sorted_keys: [], years: [], albums: [], total_photos: 0 };
         this.virtualScrollers = new Map();
+        this._allPhotos = [];
+        this._photoIndexMap = new Map();
+        this._rebuildPhotoIndex();
+        this.render();
     }
 
     async loadData(mode = 'upload', albumIds = null) {
@@ -16,10 +20,30 @@ class TimelineRenderer {
             }
             const resp = await fetch(`/api/timeline/photos?${params.toString()}`);
             this.data = await resp.json();
+            this._rebuildPhotoIndex();
             this.render();
         } catch (e) {
             console.error('Failed to load timeline data:', e);
         }
+    }
+
+    _rebuildPhotoIndex() {
+        this._allPhotos = [];
+        this._photoIndexMap.clear();
+        const groups = this.data.groups || {};
+        const sortedKeys = this.data.sorted_keys || [];
+        sortedKeys.forEach(key => {
+            const group = groups[key];
+            if (!group) return;
+            (group.photos || []).forEach(photo => {
+                this._allPhotos.push({
+                    src: photo.url,
+                    alt: photo.original_filename,
+                    url: photo.url
+                });
+                this._photoIndexMap.set(photo.photo_id, this._allPhotos.length - 1);
+            });
+        });
     }
 
     render() {
@@ -88,6 +112,8 @@ class TimelineRenderer {
     _bindYearAnchors() {
         if (!this.yearAnchors) return;
         this.yearAnchors.querySelectorAll('.year-anchor-btn').forEach(btn => {
+            if (btn.dataset.listenerBound === '1') return;
+            btn.dataset.listenerBound = '1';
             btn.addEventListener('click', (e) => {
                 e.preventDefault();
                 const year = btn.dataset.year;
@@ -146,7 +172,7 @@ class TimelineRenderer {
         div.innerHTML = `
             <img src="${photo.url}" alt="${this._escapeHtml(photo.original_filename)}"
                  class="w-full h-full object-cover cursor-zoom-in transition-transform duration-500 hover:scale-105 timeline-img"
-                 data-url="${photo.url}">
+                 data-url="${photo.url}" data-photo-id="${photo.photo_id}">
             <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent p-2 opacity-0 group-hover:opacity-100 transition-all duration-200">
                 <p class="text-white text-xs truncate">${this._escapeHtml(photo.original_filename)}</p>
                 <p class="text-gray-300 text-[10px] mt-0.5 truncate">${this._escapeHtml(photo.album_title || '')}</p>
@@ -154,18 +180,16 @@ class TimelineRenderer {
         `;
 
         const img = div.querySelector('img');
-        if (img && !img.dataset.viewerInited) {
-            img.dataset.viewerInited = '1';
-            img.addEventListener('click', function() {
-                const allImgs = Array.from(document.querySelectorAll('.timeline-img'));
+        if (img) {
+            img.addEventListener('click', () => {
+                const idx = this._photoIndexMap.get(photo.photo_id) || 0;
                 const viewer = new Viewer(document.body, {
-                    images: allImgs.map(i => ({ src: i.dataset.url || i.src, alt: i.alt })),
+                    images: this._allPhotos,
                     toolbar: true,
                     navbar: true,
                     title: false,
                     url: 'src'
                 });
-                const idx = allImgs.indexOf(this);
                 viewer.view(idx);
             });
         }

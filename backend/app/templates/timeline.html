@@ -242,41 +242,6 @@
             sidebar.classList.remove('fixed', 'inset-y-0', 'left-0', 'z-50', 'bg-white', 'shadow-2xl', 'p-4', 'w-72');
             sidebarBackdrop.classList.add('hidden');
         });
-
-        document.querySelectorAll('.year-anchor-btn').forEach(btn => {
-            btn.addEventListener('click', function(e) {
-                e.preventDefault();
-                const year = this.dataset.year;
-                const target = document.getElementById('year-' + year);
-                if (target) {
-                    const offset = 120;
-                    const top = target.getBoundingClientRect().top + window.pageYOffset - offset;
-                    window.scrollTo({ top, behavior: 'smooth' });
-                }
-            });
-        });
-
-        function initViewerFor(selector) {
-            const imgs = document.querySelectorAll(selector);
-            imgs.forEach(img => {
-                if (!img.dataset.viewerInited) {
-                    img.dataset.viewerInited = '1';
-                    img.addEventListener('click', function() {
-                        const viewer = new Viewer(document.body, {
-                            images: Array.from(document.querySelectorAll(selector)).map(i => ({ src: i.dataset.url || i.src, alt: i.alt })),
-                            toolbar: true,
-                            navbar: true,
-                            title: false,
-                            url: 'src'
-                        });
-                        const idx = Array.from(document.querySelectorAll(selector)).indexOf(this);
-                        viewer.view(idx);
-                    });
-                }
-            });
-        }
-        initViewerFor('.timeline-img');
-        initViewerFor('.on-this-day-img');
     });
 </script>
 {% endblock %}
