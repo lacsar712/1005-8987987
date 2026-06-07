@@ -20,7 +20,7 @@ from .phash_service import (
 )
 from .url_import_service import (
     UrlImportProcessor, extract_urls_from_text, extract_img_urls_from_page,
-    is_image_url, ALLOWED_CONTENT_TYPES, MAX_FILE_SIZE
+    is_image_url, ALLOWED_CONTENT_TYPES, MAX_FILE_SIZE, MAX_URLS_PER_TASK
 )
 from .collaboration_service import (
     CollaborationLinkService, CollaborationPhotoService

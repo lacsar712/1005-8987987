@@ -518,6 +518,7 @@ class UrlImportItem(db.Model):
     width = db.Column(db.Integer, nullable=True)
     height = db.Column(db.Integer, nullable=True)
     decision = db.Column(db.String(20), default='')
+    preview_filename = db.Column(db.String(200), default='')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     photo = db.relationship('Photo', foreign_keys=[photo_id], backref=db.backref('import_items', lazy=True))
@@ -541,6 +542,7 @@ class UrlImportItem(db.Model):
             'width': self.width,
             'height': self.height,
             'decision': self.decision or None,
+            'preview_filename': self.preview_filename or None,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,
         }

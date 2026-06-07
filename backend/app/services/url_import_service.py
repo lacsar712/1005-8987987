@@ -15,6 +15,7 @@ ALLOWED_CONTENT_TYPES = {
 }
 MAX_FILE_SIZE = 20 * 1024 * 1024
 HTTP_TIMEOUT = 30
+MAX_URLS_PER_TASK = 500
 
 
 def _get_http_client():
@@ -220,6 +221,9 @@ class UrlImportProcessor:
             if not urls:
                 return None, '页面中未找到图片链接'
 
+        if len(urls) > MAX_URLS_PER_TASK:
+            return None, f'单次导入最多支持 {MAX_URLS_PER_TASK} 条，当前解析到 {len(urls)} 条'
+
         task = UrlImportTask(
             album_id=album_id,
             status='pending',
@@ -334,10 +338,27 @@ class UrlImportProcessor:
         if phash_val:
             dup_photo, distance = find_duplicate_in_album(task.album_id, phash_val)
             if dup_photo:
+                preview_filename = ''
                 try:
-                    os.unlink(temp_path)
-                except OSError:
-                    pass
+                    previews_dir = os.path.join(os.path.dirname(self.uploads_folder), 'url_import_previews')
+                    os.makedirs(previews_dir, exist_ok=True)
+                    ext = 'jpg'
+                    if content_type == 'image/png':
+                        ext = 'png'
+                    elif content_type == 'image/gif':
+                        ext = 'gif'
+                    elif content_type == 'image/webp':
+                        ext = 'webp'
+                    preview_filename = f"{uuid.uuid4().hex}.{ext}"
+                    import shutil
+                    shutil.move(temp_path, os.path.join(previews_dir, preview_filename))
+                except Exception:
+                    try:
+                        os.unlink(temp_path)
+                    except OSError:
+                        pass
+                    preview_filename = ''
+                item.preview_filename = preview_filename
                 item.status = 'duplicate'
                 item.duplicate_photo_id = dup_photo.id
                 item.duplicate_distance = distance
@@ -411,8 +432,20 @@ class UrlImportProcessor:
             return False, '任务不存在'
 
         effective_album_id = album_id or task.album_id
+        previews_dir = os.path.join(os.path.dirname(self.uploads_folder), 'url_import_previews')
+
+        def _cleanup_preview():
+            if item.preview_filename:
+                p = os.path.join(previews_dir, item.preview_filename)
+                try:
+                    if os.path.exists(p):
+                        os.unlink(p)
+                except OSError:
+                    pass
+                item.preview_filename = ''
 
         if decision == 'skip':
+            _cleanup_preview()
             item.status = 'skipped'
             item.decision = 'skip'
             task.pending_decisions -= 1
@@ -423,29 +456,58 @@ class UrlImportProcessor:
             return True, None
 
         if decision == 'import':
-            temp_path, content_type, file_size, err = _download_to_temp(item.source_url)
-            if err:
-                item.status = 'failed'
-                item.error_message = err
-                item.decision = 'import'
-                task.pending_decisions -= 1
-                task.failed += 1
-                db.session.commit()
-                return False, err
+            temp_path = None
+            content_type = item.content_type
+            width = item.width
+            height = item.height
+            exif_info = None
 
-            is_valid, width, height, exif_info, err = _validate_image_content(temp_path, content_type)
-            if not is_valid:
-                try:
-                    os.unlink(temp_path)
-                except OSError:
-                    pass
-                item.status = 'failed'
-                item.error_message = err
-                item.decision = 'import'
-                task.pending_decisions -= 1
-                task.failed += 1
-                db.session.commit()
-                return False, err
+            if item.preview_filename:
+                candidate = os.path.join(previews_dir, item.preview_filename)
+                if os.path.exists(candidate):
+                    is_valid, v_width, v_height, v_exif, err = _validate_image_content(candidate, content_type)
+                    if is_valid:
+                        temp_path = candidate
+                        width = v_width
+                        height = v_height
+                        exif_info = v_exif
+                    else:
+                        try:
+                            os.unlink(candidate)
+                        except OSError:
+                            pass
+                        item.preview_filename = ''
+
+            if not temp_path:
+                t_path, c_type, f_size, err = _download_to_temp(item.source_url)
+                if err:
+                    _cleanup_preview()
+                    item.status = 'failed'
+                    item.error_message = err
+                    item.decision = 'import'
+                    task.pending_decisions -= 1
+                    task.failed += 1
+                    db.session.commit()
+                    return False, err
+                content_type = c_type
+                is_valid, v_width, v_height, v_exif, err = _validate_image_content(t_path, content_type)
+                if not is_valid:
+                    try:
+                        os.unlink(t_path)
+                    except OSError:
+                        pass
+                    _cleanup_preview()
+                    item.status = 'failed'
+                    item.error_message = err
+                    item.decision = 'import'
+                    task.pending_decisions -= 1
+                    task.failed += 1
+                    db.session.commit()
+                    return False, err
+                temp_path = t_path
+                width = v_width
+                height = v_height
+                exif_info = v_exif
 
             original_filename = item.original_filename or 'image'
             ext = original_filename.rsplit('.', 1)[1].lower() if '.' in original_filename else 'jpg'
@@ -454,13 +516,18 @@ class UrlImportProcessor:
 
             try:
                 import shutil
-                shutil.move(temp_path, save_path)
+                if os.path.dirname(temp_path) == previews_dir:
+                    shutil.move(temp_path, save_path)
+                else:
+                    shutil.move(temp_path, save_path)
             except Exception as e:
                 try:
                     os.unlink(temp_path)
                 except OSError:
                     pass
                 return False, f'保存文件失败: {str(e)}'
+
+            item.preview_filename = ''
 
             exif_taken_at, exif_camera_model = exif_info or (None, None)
             new_photo = Photo(
